@@ -64,13 +64,15 @@ $('form').addEventListener('submit', async (e) => {
 // ---------- player ----------
 async function play({ pc, fast, reliable }) {
   const video = $('video');
-  const stream = new MediaStream();
-  pc.ontrack = (e) => {
-    stream.addTrack(e.track);
+  // Take the tracks from the receivers: they exist from the moment the
+  // transceivers were added, while `ontrack` already fired during connect()
+  // (before this function ran), so listening for it here would miss them.
+  const receivers = pc.getReceivers().filter((r) => r.track);
+  for (const r of receivers) {
     // Ask the browser to show frames as soon as they are decoded.
-    try { e.receiver.jitterBufferTarget = 0; } catch (_) {}
-  };
-  video.srcObject = stream;
+    try { r.jitterBufferTarget = 0; } catch (_) {}
+  }
+  video.srcObject = new MediaStream(receivers.map((r) => r.track));
 
   await new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(
