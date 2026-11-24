@@ -1,0 +1,49 @@
+# Tests on every push and pull request.
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Web client tests (crypto vectors shared with Rust, input layout)
+        working-directory: web
+        run: node test/run.mjs
+
+  host-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System libraries (ALSA headers for cpal, cmake for Opus)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev cmake
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - name: Tests
+        working-directory: host
+        run: cargo test --release
+
+  host-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - name: Tests
+        working-directory: host
+        run: cargo test --release
+      - name: Build
+        working-directory: host
+        run: cargo build --release

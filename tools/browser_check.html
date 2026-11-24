@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Everywhere browser check</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --ok:#127a3a; --bad:#b3261e; --mute:#666; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --ok:#5cd38a; --bad:#ff8a80; --mute:#aaa; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; margin:0; padding:16px; }
+  h1 { font-size:20px; } h2 { font-size:16px; margin-top:24px; }
+  table { border-collapse:collapse; width:100%; max-width:760px; }
+  td { border-bottom:1px solid #8884; padding:4px 8px 4px 0; vertical-align:top; word-break:break-word; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .mute { color:var(--mute); }
+  pre { white-space:pre-wrap; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Everywhere browser check</h1>
+<p class="mute">Open this on the laptop you will play from. Nothing is sent anywhere except STUN requests to Google and Cloudflare.</p>
+<div id="out">Running…</div>
+<pre id="json"></pre>
+<script>
+const R = {};
+const row = (k, v, good) => `<tr><td>${k}</td><td class="${good === undefined ? '' : good ? 'ok' : 'bad'}">${v}</td></tr>`;
+
+async function codecs() {
+  const caps = (window.RTCRtpReceiver && RTCRtpReceiver.getCapabilities) ? RTCRtpReceiver.getCapabilities('video') : null;
+  const names = caps ? [...new Set(caps.codecs.map(c => c.mimeType.replace('video/', '')))] : [];
+  R.webrtc_video_codecs = names;
+  const mc = {};
+  const tests = { H264: 'video/H264', H265: 'video/H265', AV1: 'video/AV1', VP9: 'video/VP9' };
+  for (const [n, ct] of Object.entries(tests)) {
+    try {
+      const r = await navigator.mediaCapabilities.decodingInfo({ type: 'webrtc',
+        video: { contentType: ct, width: 1920, height: 1080, bitrate: 20e6, framerate: 60 } });
+      mc[n] = { supported: r.supported, smooth: r.smooth, powerEfficient: r.powerEfficient };
+    } catch (e) { mc[n] = { supported: false, error: String(e) }; }
+  }
+  R.webrtc_decode_1080p60 = mc;
+  const wc = {};
+  const wcTests = { H264: 'avc1.640028', H265: 'hvc1.1.6.L120.90', AV1: 'av01.0.08M.08' };
+  for (const [n, codec] of Object.entries(wcTests)) {
+    try {
+      const r = await VideoDecoder.isConfigSupported({ codec, hardwareAcceleration: 'prefer-hardware', codedWidth: 1920, codedHeight: 1080 });
+      wc[n] = r.supported;
+    } catch (e) { wc[n] = false; }
+  }
+  R.webcodecs_hw_decode = wc;
+}
+
+async function ice() {
+  const pc = new RTCPeerConnection({ iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' } ] });
+  pc.createDataChannel('probe');
+  const cands = [];
+  pc.onicecandidate = e => { if (e.candidate && e.candidate.candidate) cands.push(e.candidate.candidate); };
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise(r => { const t = setTimeout(r, 6000);
+    pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); r(); } }; });
+  pc.close();
+  const parsed = cands.map(c => { const p = c.split(' ');
+    return { proto: p[2], addr: p[4], port: p[5], type: p[7] }; });
+  R.ice_candidates = parsed;
+  const srflx = parsed.filter(c => c.type === 'srflx');
+  R.ice_summary = {
+    host_mdns: parsed.some(c => c.type === 'host' && c.addr.endsWith('.local')),
+    host_ipv6: parsed.some(c => c.type === 'host' && c.addr.includes(':')),
+    srflx_ipv4: srflx.filter(c => !c.addr.includes(':')).map(c => c.addr + ':' + c.port),
+    srflx_ipv6: srflx.filter(c => c.addr.includes(':')).map(c => c.addr),
+    udp_works: srflx.length > 0,
+    // Same public port from two STUN servers = easy NAT (hole punching works).
+    nat_mapping: (() => { const ports = new Set(srflx.filter(c => !c.addr.includes(':')).map(c => c.port));
+      // Chrome merges identical srflx candidates, so ONE srflx from TWO STUN
+      // servers means both saw the same public port.
+      return srflx.length === 0 ? 'unknown (no UDP)' : ports.size === 1 ? 'endpoint-independent' : 'symmetric'; })(),
+  };
+}
+
+function features() {
+  R.features = {
+    secure_context: window.isSecureContext,
+    pointer_lock: 'requestPointerLock' in Element.prototype,
+    pointer_lock_unadjusted: true, // only detectable on request; Chrome supports unadjustedMovement
+    keyboard_lock: !!(navigator.keyboard && navigator.keyboard.lock),
+    gamepad_api: 'getGamepads' in navigator,
+    fullscreen: !!document.documentElement.requestFullscreen,
+    webcodecs: 'VideoDecoder' in window,
+    webtransport: 'WebTransport' in window,
+    jitter_buffer_target: !!(window.RTCRtpReceiver && 'jitterBufferTarget' in RTCRtpReceiver.prototype),
+    request_video_frame_callback: 'requestVideoFrameCallback' in HTMLVideoElement.prototype,
+    user_agent: navigator.userAgent,
+    hw_threads: navigator.hardwareConcurrency,
+  };
+}
+
+(async () => {
+  features();
+  try { await codecs(); } catch (e) { R.codec_error = String(e); }
+  try { await ice(); } catch (e) { R.ice_error = String(e); }
+  const f = R.features, s = R.ice_summary || {}, d = R.webrtc_decode_1080p60 || {};
+  const dec = n => d[n] ? (d[n].supported ? (d[n].powerEfficient ? 'yes, hardware' : 'yes, software') : 'no') : '?';
+  document.getElementById('out').innerHTML =
+    '<h2>Video decode in WebRTC (1080p60)</h2><table>' +
+    ['H264','H265','AV1','VP9'].map(n => row(n, dec(n), d[n] && d[n].supported)).join('') + '</table>' +
+    '<h2>Network (WebRTC ICE)</h2><table>' +
+    row('UDP to STUN works', s.udp_works ? 'yes' : 'no — only a TCP relay would work here', s.udp_works) +
+    row('Public IPv4 seen', (s.srflx_ipv4 || []).join(', ') || 'none') +
+    row('Public IPv6 seen', (s.srflx_ipv6 || []).join(', ') || 'none') +
+    row('NAT mapping', s.nat_mapping, s.nat_mapping === 'endpoint-independent') +
+    row('Local IPs hidden (mDNS)', s.host_mdns ? 'yes' : 'no') + '</table>' +
+    '<h2>Controls</h2><table>' +
+    row('Secure context (HTTPS)', f.secure_context, f.secure_context) +
+    row('Pointer lock (mouse-look)', f.pointer_lock, f.pointer_lock) +
+    row('Keyboard lock (Esc, Alt+Tab to game)', f.keyboard_lock, f.keyboard_lock) +
+    row('Gamepad API', f.gamepad_api, f.gamepad_api) +
+    row('jitterBufferTarget (low delay)', f.jitter_buffer_target, f.jitter_buffer_target) +
+    row('WebCodecs', f.webcodecs, f.webcodecs) + '</table>';
+  document.getElementById('json').textContent = JSON.stringify(R, null, 2);
+  window.EVERYWHERE_CHECK = R;
+})();
+</script>
+</body>
+</html>

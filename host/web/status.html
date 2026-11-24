@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Everywhere host</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#14171a; --mute:#5f6b76; --line:#e3e7eb; --ok:#127a3a; --bad:#b3261e; --accent:#2457d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --card:#161b22; --fg:#e6edf3; --mute:#8b949e; --line:#30363d; --ok:#3fb950; --bad:#f85149; --accent:#58a6ff; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; padding:24px 16px; }
+  main { max-width:640px; margin:0 auto; display:grid; gap:16px; }
+  h1 { font-size:22px; margin:0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .big { font:600 28px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:.04em; }
+  .label { color:var(--mute); font-size:13px; margin-bottom:2px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
+  button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button.danger { color:var(--bad); }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .mute { color:var(--mute); }
+  pre { margin:0; font:12px/1.5 ui-monospace, monospace; white-space:pre-wrap; max-height:200px; overflow:auto; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Everywhere</h1>
+  <div class="card">
+    <p style="margin-top:0">On any laptop, open <a id="url" target="_blank" rel="noopener"></a> and type:</p>
+    <div class="grid">
+      <div><div class="label">PC code</div><div class="big" id="code">…</div></div>
+      <div><div class="label">Password</div><div class="big" id="pw">••••-••••-••••</div>
+        <div class="row" style="margin-top:6px"><button id="show">Show</button><button id="copy">Copy</button></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="label">Now</div>
+    <div id="session" class="mute">Nobody connected.</div>
+    <div class="row" style="margin-top:10px"><button class="danger" id="kick" hidden>Disconnect</button></div>
+  </div>
+  <div class="card grid">
+    <div><div class="label">Meeting point</div><div id="relays">…</div></div>
+    <div><div class="label">Wrong passwords today</div><div id="guard">…</div>
+      <button id="unlock" hidden style="margin-top:6px">Unlock</button></div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><div class="label">Activity</div><button id="newpw" class="danger">New password</button></div>
+    <pre id="events"></pre>
+    <p class="mute" style="margin-bottom:0;font-size:13px">Settings file: <span id="cfg"></span></p>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (path, method = 'GET') => fetch(path, { method, headers: { 'X-Everywhere': '1' } }).then((r) => r.ok ? r.json() : Promise.reject(r.status));
+let shown = false, pw = '';
+async function refresh() {
+  try {
+    const s = await api('/api/status');
+    pw = s.password;
+    $('code').textContent = s.pc_code;
+    $('pw').textContent = shown ? s.password : '••••-••••-••••';
+    $('url').textContent = s.web_url; $('url').href = s.web_url;
+    $('relays').innerHTML = s.relays_up > 0
+      ? `<span class="ok">Reachable</span> <span class="mute">(${s.relays_up}/${s.relays_total} relays)</span>`
+      : `<span class="bad">Not reachable</span> <span class="mute">(0/${s.relays_total} relays; check the internet connection)</span>`;
+    const g = s.guard;
+    $('guard').innerHTML = g.locked ? '<span class="bad">Locked after too many wrong passwords</span>' : `${g.failures_today}`;
+    $('unlock').hidden = !g.locked;
+    const x = s.session;
+    if (x) {
+      $('session').innerHTML = `<b>${x.state}</b> · ${x.path || 'finding a path…'}<br>
+        <span class="mute">${x.width}x${x.height} · ${x.fps.toFixed(0)} fps · ${x.bitrate_mbps.toFixed(1)} Mbit/s · ${x.encoder} · audio ${x.audio ? 'on' : 'off'} · ${x.input_events} inputs · ${x.started_secs_ago}s</span>`;
+      $('kick').hidden = false;
+    } else { $('session').textContent = 'Nobody connected.'; $('kick').hidden = true; }
+    $('events').textContent = s.events.slice().reverse().join('\n');
+    $('cfg').textContent = s.config_path;
+  } catch (e) { $('relays').innerHTML = '<span class="bad">Host not running</span>'; }
+}
+$('show').onclick = () => { shown = !shown; $('show').textContent = shown ? 'Hide' : 'Show'; refresh(); };
+$('copy').onclick = () => navigator.clipboard.writeText(pw);
+$('kick').onclick = () => api('/api/disconnect', 'POST').then(refresh);
+$('unlock').onclick = () => api('/api/unlock', 'POST').then(refresh);
+$('newpw').onclick = () => { if (confirm('Make a new password? The old one stops working and anyone connected is disconnected.')) api('/api/new-password', 'POST').then(refresh); };
+refresh(); setInterval(refresh, 1000);
+</script>
+</body>
+</html>
