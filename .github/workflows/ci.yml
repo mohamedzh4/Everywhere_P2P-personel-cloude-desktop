@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+env:
+  # libopus (built by audiopus_sys) declares an old minimum CMake; CMake 4
+  # refuses it unless this is set.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
 permissions:
   contents: read
 
