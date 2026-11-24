@@ -11,3 +11,9 @@ Only the `.js` files are kept (no `src/`, typings or source maps). The import ma
 points `@noble/curves/` and `@noble/hashes/` here.
 
 To update: `npm pack @noble/curves@X @noble/hashes@X`, copy the same files, re-run `node test/run.mjs`.
+
+## Fonts
+
+| Folder | Font | Version | Licence |
+|---|---|---|---|
+| `fonts/` | Figtree (variable, latin + latin-ext), from `@fontsource-variable/figtree` | 5.3.0 | SIL Open Font License 1.1 (see `fonts/OFL.txt`) |

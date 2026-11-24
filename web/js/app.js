@@ -3,9 +3,14 @@
 import { connect } from './connect.js';
 import { attachInput, enterPlayMode } from './input.js';
 import { startStats } from './stats.js';
+import { runLoader, startOrbit } from './look.js';
 
 const $ = (id) => document.getElementById(id);
 const REMEMBER_KEY = 'everywhere.code';
+
+runLoader();
+const orbit = startOrbit();
+const dock = (text, live = false) => { $('dock-state').textContent = text; $('dock-state').classList.toggle('live', live); };
 
 // ---------- connect screen ----------
 const store = {
@@ -41,12 +46,16 @@ $('form').addEventListener('submit', async (e) => {
   if (!password) return step('Type the password shown on your PC.', true);
   store.set($('remember').checked ? code.replace(/\D/g, '') : '');
   $('go').disabled = true;
+  orbit.set('connecting');
+  dock('Connecting');
   try {
     const session = await connect(code, password, (t) => step(t));
     $('password').value = '';
     await play(session);
   } catch (err) {
     step(err.message || String(err), true);
+    orbit.set('idle');
+    dock('Not connected');
   } finally {
     $('go').disabled = false;
   }
@@ -73,6 +82,8 @@ async function play({ pc, fast, reliable }) {
     });
   });
 
+  orbit.set('connected');
+  dock('Connected', true);
   $('connect').hidden = true;
   $('player').hidden = false;
   step('');
@@ -115,6 +126,8 @@ async function play({ pc, fast, reliable }) {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     $('player').hidden = true;
     $('connect').hidden = false;
+    orbit.set('idle');
+    dock('Not connected');
     step(msg || 'Disconnected.', !!msg);
   };
   $('disconnect').onclick = () => end();
