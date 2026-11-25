@@ -103,6 +103,7 @@ export async function connect(pcCode, password, onStep) {
     let ack;
     try { ack = await ackP; } catch (e) {
       if (e.kind === 'timeout') throw new ConnectError('offline', 'Your PC did not answer. Is Everywhere running on it, and is the PC code right?');
+      if (e.kind === 'paused') throw new ConnectError('paused', 'Sharing is turned off on your PC. Click Start sharing in the Everywhere window on it.');
       if (e.kind === 'locked') throw new ConnectError('locked', 'Your PC locked itself after too many wrong passwords. Unlock it from the Everywhere status page on the PC.');
       if (e.kind === 'wait') throw new ConnectError('wait', `Too many tries. Wait ${e.message} seconds and try again.`);
       throw e;

@@ -29,8 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: System libraries (ALSA headers for cpal, cmake for Opus)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev cmake
+      - name: System libraries (OpenSSL, cmake for Opus)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev cmake pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - name: Tests
+        working-directory: host
+        run: cargo test --release
+
+  host-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host

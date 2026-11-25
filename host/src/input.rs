@@ -1,9 +1,12 @@
 //! Input from the browser: decode the data-channel messages (layout in
 //! web/js/input.js) and inject them into this PC.
 //!
-//! Windows: SendInput with hardware scan codes, so games see real key
-//! positions whatever the keyboard layout. Other systems: events are counted
-//! and dropped (the host is Windows; this keeps the rest testable).
+//! Every system gets physical key positions (not characters), so games and
+//! shortcuts work whatever the keyboard layout:
+//! - Windows: SendInput with hardware scan codes.
+//! - macOS: CGEvent with virtual key codes (needs the Accessibility
+//!   permission: System Settings > Privacy & Security > Accessibility).
+//! - Linux (X11): XTest with X key codes (evdev + 8).
 //!
 //! Limits: SendInput cannot reach windows of programs running as
 //! administrator, the lock screen or UAC prompts unless the host runs as a
@@ -41,7 +44,7 @@ pub fn decode(d: &[u8]) -> Option<InputEvent> {
 
 /// PC/AT set-1 scan code for a KeyboardEvent.code, and whether it is an
 /// "extended" (E0-prefixed) key.
-#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux", test)), allow(dead_code))]
 pub fn scan_code(code: &str) -> Option<(u16, bool)> {
     let s = |v: u16| Some((v, false));
     let e = |v: u16| Some((v, true));
@@ -144,7 +147,7 @@ impl Drop for Injector {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 mod platform {
     use super::{scan_code, InputEvent};
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -214,10 +217,155 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+/// Linux evdev key code (X key code = evdev + 8). For most keys it equals the
+/// set-1 scan code; the extended keys have their own numbers.
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+pub fn evdev_code(code: &str) -> Option<u16> {
+    let (scan, extended) = scan_code(code)?;
+    if !extended {
+        return Some(match scan {
+            0x73 => 89,  // IntlRo
+            0x7D => 124, // IntlYen
+            0x45 if code == "Pause" => 119,
+            s => s,
+        });
+    }
+    Some(match code {
+        "NumpadEnter" => 96, "ControlRight" => 97, "NumpadDivide" => 98, "PrintScreen" => 99,
+        "AltRight" => 100, "Home" => 102, "ArrowUp" => 103, "PageUp" => 104, "ArrowLeft" => 105,
+        "ArrowRight" => 106, "End" => 107, "ArrowDown" => 108, "PageDown" => 109, "Insert" => 110,
+        "Delete" => 111, "MetaLeft" => 125, "MetaRight" => 126, "ContextMenu" => 127,
+        _ => return None,
+    })
+}
+
+/// macOS virtual key code (kVK_*) for a KeyboardEvent.code. The Windows key
+/// maps to Command, so Win+C on a PC keyboard becomes Cmd+C on the Mac.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn mac_keycode(code: &str) -> Option<u16> {
+    Some(match code {
+        "KeyA" => 0x00, "KeyS" => 0x01, "KeyD" => 0x02, "KeyF" => 0x03, "KeyH" => 0x04, "KeyG" => 0x05,
+        "KeyZ" => 0x06, "KeyX" => 0x07, "KeyC" => 0x08, "KeyV" => 0x09, "IntlBackslash" => 0x0A,
+        "KeyB" => 0x0B, "KeyQ" => 0x0C, "KeyW" => 0x0D, "KeyE" => 0x0E, "KeyR" => 0x0F, "KeyY" => 0x10,
+        "KeyT" => 0x11, "Digit1" => 0x12, "Digit2" => 0x13, "Digit3" => 0x14, "Digit4" => 0x15,
+        "Digit6" => 0x16, "Digit5" => 0x17, "Equal" => 0x18, "Digit9" => 0x19, "Digit7" => 0x1A,
+        "Minus" => 0x1B, "Digit8" => 0x1C, "Digit0" => 0x1D, "BracketRight" => 0x1E, "KeyO" => 0x1F,
+        "KeyU" => 0x20, "BracketLeft" => 0x21, "KeyI" => 0x22, "KeyP" => 0x23, "Enter" => 0x24,
+        "KeyL" => 0x25, "KeyJ" => 0x26, "Quote" => 0x27, "KeyK" => 0x28, "Semicolon" => 0x29,
+        "Backslash" => 0x2A, "Comma" => 0x2B, "Slash" => 0x2C, "KeyN" => 0x2D, "KeyM" => 0x2E,
+        "Period" => 0x2F, "Tab" => 0x30, "Space" => 0x31, "Backquote" => 0x32, "Backspace" => 0x33,
+        "Escape" => 0x35, "MetaRight" => 0x36, "MetaLeft" => 0x37, "ShiftLeft" => 0x38,
+        "CapsLock" => 0x39, "AltLeft" => 0x3A, "ControlLeft" => 0x3B, "ShiftRight" => 0x3C,
+        "AltRight" => 0x3D, "ControlRight" => 0x3E, "NumpadDecimal" => 0x41, "NumpadMultiply" => 0x43,
+        "NumpadAdd" => 0x45, "NumLock" => 0x47, "NumpadDivide" => 0x4B, "NumpadEnter" => 0x4C,
+        "NumpadSubtract" => 0x4E, "NumpadEqual" => 0x51, "Numpad0" => 0x52, "Numpad1" => 0x53,
+        "Numpad2" => 0x54, "Numpad3" => 0x55, "Numpad4" => 0x56, "Numpad5" => 0x57, "Numpad6" => 0x58,
+        "Numpad7" => 0x59, "Numpad8" => 0x5B, "Numpad9" => 0x5C, "IntlYen" => 0x5D, "IntlRo" => 0x5E,
+        "F5" => 0x60, "F6" => 0x61, "F7" => 0x62, "F3" => 0x63, "F8" => 0x64, "F9" => 0x65,
+        "F11" => 0x67, "F13" => 0x69, "F14" => 0x6B, "F10" => 0x6D, "F12" => 0x6F, "F15" => 0x71,
+        "Insert" => 0x72, "Home" => 0x73, "PageUp" => 0x74, "Delete" => 0x75, "F4" => 0x76,
+        "End" => 0x77, "F2" => 0x78, "PageDown" => 0x79, "F1" => 0x7A, "ArrowLeft" => 0x7B,
+        "ArrowRight" => 0x7C, "ArrowDown" => 0x7D, "ArrowUp" => 0x7E,
+        _ => return None,
+    })
+}
+
+#[cfg(all(any(target_os = "macos", target_os = "linux"), not(test)))]
+mod platform {
+    //! macOS and Linux (X11) through enigo. Created on first use, so a host
+    //! that nobody connects to never asks for the Accessibility permission.
+    use super::InputEvent;
+    use enigo::{Axis, Button, Coordinate, Direction, Enigo, Keyboard, Mouse, Settings};
+    use std::cell::RefCell;
+
+    struct State {
+        enigo: Option<Enigo>,
+        failed: bool,
+        /// Wheel movement not yet sent (trackpads send small steps).
+        wheel: (i32, i32),
+    }
+
+    thread_local! {
+        static STATE: RefCell<State> = const { RefCell::new(State { enigo: None, failed: false, wheel: (0, 0) }) };
+    }
+
+    #[cfg(target_os = "macos")]
+    fn key(code: &str) -> Option<u16> {
+        super::mac_keycode(code)
+    }
+    #[cfg(target_os = "linux")]
+    fn key(code: &str) -> Option<u16> {
+        super::evdev_code(code).map(|c| c + 8)
+    }
+
+    pub fn inject(ev: &InputEvent) {
+        STATE.with(|st| {
+            let mut st = st.borrow_mut();
+            if st.enigo.is_none() && !st.failed {
+                match Enigo::new(&Settings::default()) {
+                    Ok(e) => st.enigo = Some(e),
+                    Err(e) => {
+                        st.failed = true;
+                        crate::say!(
+                            "cannot control the mouse and keyboard: {e}. On a Mac, allow Everywhere in \
+                             System Settings > Privacy & Security > Accessibility, then restart it"
+                        );
+                    }
+                }
+            }
+            let State { enigo, wheel, .. } = &mut *st;
+            let Some(en) = enigo.as_mut() else { return };
+            let dir = |down: bool| if down { Direction::Press } else { Direction::Release };
+            let _ = match ev {
+                InputEvent::Move { dx, dy } => en.move_mouse(*dx as i32, *dy as i32, Coordinate::Rel),
+                InputEvent::Abs { x, y } => {
+                    let (w, h) = en.main_display().unwrap_or((1920, 1080));
+                    let px = (*x as i64 * w as i64 / 65536) as i32;
+                    let py = (*y as i64 * h as i64 / 65536) as i32;
+                    en.move_mouse(px, py, Coordinate::Abs)
+                }
+                InputEvent::Wheel { dx, dy } => {
+                    // Browser sends Windows units: 120 per notch, positive = away
+                    // from the user. enigo counts notches, positive = down/right.
+                    wheel.0 += *dx as i32;
+                    wheel.1 += *dy as i32;
+                    let (nx, ny) = (wheel.0 / 120, wheel.1 / 120);
+                    wheel.0 -= nx * 120;
+                    wheel.1 -= ny * 120;
+                    if ny != 0 {
+                        let _ = en.scroll(-ny, Axis::Vertical);
+                    }
+                    if nx != 0 {
+                        let _ = en.scroll(nx, Axis::Horizontal);
+                    }
+                    Ok(())
+                }
+                InputEvent::Button { down, button } => {
+                    let b = match button {
+                        0 => Button::Left,
+                        1 => Button::Middle,
+                        2 => Button::Right,
+                        3 => Button::Back,
+                        4 => Button::Forward,
+                        _ => return,
+                    };
+                    en.button(b, dir(*down))
+                }
+                InputEvent::Key { down, code } => match key(code) {
+                    Some(k) => en.raw(k, dir(*down)),
+                    None => Ok(()),
+                },
+                InputEvent::ReleaseAll => Ok(()),
+            };
+        });
+    }
+}
+
+#[cfg(any(test, not(any(windows, target_os = "macos", target_os = "linux"))))]
 mod platform {
     use super::InputEvent;
-    /// No injection off Windows; events are only counted by the Injector.
+    /// Tests (and unknown systems): events are only counted, so running the
+    /// tests never moves the real mouse.
     pub fn inject(_ev: &InputEvent) {}
 }
 
@@ -259,5 +407,24 @@ mod tests {
             assert!(scan_code(k).is_some(), "{k}");
         }
         assert_eq!(scan_code("ArrowUp"), Some((0x48, true)));
+    }
+
+    #[test]
+    fn linux_and_mac_key_codes() {
+        // evdev: KEY_W 17, KEY_ESC 1, KEY_UP 103, KEY_RIGHTCTRL 97, KEY_102ND 86.
+        assert_eq!(evdev_code("KeyW"), Some(17));
+        assert_eq!(evdev_code("Escape"), Some(1));
+        assert_eq!(evdev_code("ArrowUp"), Some(103));
+        assert_eq!(evdev_code("ControlRight"), Some(97));
+        assert_eq!(evdev_code("IntlBackslash"), Some(86));
+        assert_eq!(evdev_code("Pause"), Some(119));
+        // macOS: kVK_ANSI_W 0x0D, kVK_Escape 0x35, kVK_UpArrow 0x7E, Win key = Command.
+        assert_eq!(mac_keycode("KeyW"), Some(0x0D));
+        assert_eq!(mac_keycode("Escape"), Some(0x35));
+        assert_eq!(mac_keycode("ArrowUp"), Some(0x7E));
+        assert_eq!(mac_keycode("MetaLeft"), Some(0x37));
+        for k in ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ControlLeft", "Tab", "Enter", "F5"] {
+            assert!(evdev_code(k).is_some() && mac_keycode(k).is_some(), "{k}");
+        }
     }
 }

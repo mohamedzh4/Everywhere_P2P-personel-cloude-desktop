@@ -171,7 +171,7 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
     socks.insert(0, Sock { socket: s4, local: l4 });
 
     let answer = rtc.sdp_api().accept_offer(offer).map_err(|e| format!("accept offer: {e}"))?;
-    println!("  this PC offers: {}", offered.join(", "));
+    crate::say!("  this PC offers: {}", offered.join(", "));
     if opts.bind.is_none() {
         probe_strict_browser(&mut rtc, offer_sdp);
     }
@@ -202,11 +202,11 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
             .spawn(move || {
                 let _upnp = upnp; // the router port closes when the session ends
                 if let Err(e) = rtc_loop(rtc, socks, rx, tx, &shared) {
-                    eprintln!("session ended: {e}");
+                    crate::say!("session ended: {e}");
                 }
                 shared.stop.store(true, Ordering::Relaxed);
                 shared.set(|s| s.state = "ended".into());
-                println!("session closed");
+                crate::say!("session closed");
             })
             .map_err(|e| e.to_string())?;
     }
@@ -221,13 +221,13 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
 fn probe_strict_browser(rtc: &mut Rtc, offer_sdp: &str) {
     let seen = net::remote_public_v4(offer_sdp);
     if seen.is_empty() {
-        println!("  browser offers: no public IPv4 address (only IPv6 or local)");
+        crate::say!("  browser offers: no public IPv4 address (only IPv6 or local)");
     }
     for (ip, ports) in seen {
         let pattern = net::port_pattern(&ports);
         let list = ports.iter().map(u16::to_string).collect::<Vec<_>>().join(",");
         match &pattern {
-            net::PortPattern::Stable => println!("  browser offers: public {ip}:{list} (easy network)"),
+            net::PortPattern::Stable => crate::say!("  browser offers: public {ip}:{list} (easy network)"),
             net::PortPattern::Sequential { .. } => {
                 let probe = net::predicted_ports(&pattern, 40);
                 for port in &probe {
@@ -236,12 +236,12 @@ fn probe_strict_browser(rtc: &mut Rtc, offer_sdp: &str) {
                         rtc.add_remote_candidate(c);
                     }
                 }
-                println!(
+                crate::say!(
                     "  browser offers: public {ip} ports {list} (strict network, ports count up): also trying the next {} ports",
                     probe.len()
                 );
             }
-            net::PortPattern::Random => println!(
+            net::PortPattern::Random => crate::say!(
                 "  browser offers: public {ip} ports {list} (strict network, random ports): a direct path is unlikely from there"
             ),
         }
@@ -263,7 +263,7 @@ fn recv_loop(sock: UdpSocket, tx: Sender<Msg>, shared: Arc<Shared>) {
             // Windows reports ICMP "port unreachable" as a receive error; ignore.
             Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => {}
             Err(e) => {
-                eprintln!("udp recv: {e}");
+                crate::say!("udp recv: {e}");
                 return;
             }
         }
@@ -271,13 +271,13 @@ fn recv_loop(sock: UdpSocket, tx: Sender<Msg>, shared: Arc<Shared>) {
 }
 
 fn encode_loop(opts: Options, tx: Sender<Msg>, shared: Arc<Shared>) {
-    let mut src = source::open(&opts.source, opts.width, opts.height);
+    let mut src = source::open(&opts.source, opts.width, opts.height, opts.fps);
     let (w, h) = src.size();
     let start_bps = (opts.max_bitrate_bps / 2).max(1_000_000);
     let mut enc = match H264Encoder::new(w, h, opts.fps, start_bps) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("{e}");
+            crate::say!("{e}");
             shared.stop.store(true, Ordering::Relaxed);
             return;
         }
@@ -309,15 +309,15 @@ fn encode_loop(opts: Options, tx: Sender<Msg>, shared: Arc<Shared>) {
             let est = shared.estimate_bps.load(Ordering::Relaxed);
             if let Some(bps) = rc.decide(enc.bitrate(), est, Instant::now()) {
                 match enc.set_bitrate(bps) {
-                    Ok(()) => println!("bitrate -> {:.1} Mbit/s (estimate {:.1})", bps as f64 / 1e6, est as f64 / 1e6),
-                    Err(e) => eprintln!("{e}"),
+                    Ok(()) => crate::say!("bitrate -> {:.1} Mbit/s (estimate {:.1})", bps as f64 / 1e6, est as f64 / 1e6),
+                    Err(e) => crate::say!("{e}"),
                 }
             }
         }
 
         let captured = Instant::now();
         if let Err(e) = src.capture(&mut frame) {
-            eprintln!("capture: {e}");
+            crate::say!("capture: {e}");
             shared.stop.store(true, Ordering::Relaxed);
             return;
         }
@@ -333,7 +333,7 @@ fn encode_loop(opts: Options, tx: Sender<Msg>, shared: Arc<Shared>) {
         let out = match enc.encode(&frame.i420, force) {
             Ok(o) => o,
             Err(e) => {
-                eprintln!("{e}");
+                crate::say!("{e}");
                 continue;
             }
         };
@@ -446,7 +446,7 @@ impl PaceStats {
         let mut d = std::mem::take(&mut self.delays_ms);
         d.sort_by(|a, b| a.total_cmp(b));
         let q = |p: f64| d[((d.len() - 1) as f64 * p) as usize];
-        println!("send queue: p50 {:.2} ms, p95 {:.2} ms, max {:.2} ms", q(0.5), q(0.95), q(1.0));
+        crate::say!("send queue: p50 {:.2} ms, p95 {:.2} ms, max {:.2} ms", q(0.5), q(0.95), q(1.0));
         self.report = Some(Instant::now());
     }
 }
@@ -510,7 +510,7 @@ fn rtc_loop(mut rtc: Rtc, socks: Vec<Sock>, rx: Receiver<Msg>, tx: Sender<Msg>, 
                                     });
                                     shared.set(|st| st.audio = true);
                                 }
-                                Err(e) => println!("no audio: {e}"),
+                                Err(e) => crate::say!("no audio: {e}"),
                             }
                         }
                     }
@@ -559,7 +559,7 @@ fn rtc_loop(mut rtc: Rtc, socks: Vec<Sock>, rx: Receiver<Msg>, tx: Sender<Msg>, 
                     if shared.connected.load(Ordering::Relaxed) && !path_known {
                         path_known = true;
                         let p = describe_path(destination, source);
-                        println!("connected: {p}");
+                        crate::say!("connected: {p}");
                         shared.set(|st| {
                             st.path = p;
                             st.remote = source.to_string();
@@ -573,7 +573,7 @@ fn rtc_loop(mut rtc: Rtc, socks: Vec<Sock>, rx: Receiver<Msg>, tx: Sender<Msg>, 
                 let zero = MediaTime::from_millis(0);
                 match writer.playout_delay(zero, zero).write(pt, captured, MediaTime::from_90khz(rtp_90k), data) {
                     Ok(()) => pace.on_write(Instant::now()),
-                    Err(e) => eprintln!("write video: {e}"),
+                    Err(e) => crate::say!("write video: {e}"),
                 }
                 pace.maybe_report();
                 let n = injector.injected;

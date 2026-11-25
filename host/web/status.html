@@ -3,85 +3,397 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Everywhere host</title>
+<title>Everywhere</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --fg:#14171a; --mute:#5f6b76; --line:#e3e7eb; --ok:#127a3a; --bad:#b3261e; --accent:#2457d6; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --card:#161b22; --fg:#e6edf3; --mute:#8b949e; --line:#30363d; --ok:#3fb950; --bad:#f85149; --accent:#58a6ff; } }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; padding:24px 16px; }
-  main { max-width:640px; margin:0 auto; display:grid; gap:16px; }
-  h1 { font-size:22px; margin:0; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
-  .big { font:600 28px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:.04em; }
-  .label { color:var(--mute); font-size:13px; margin-bottom:2px; }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
-  button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; padding:6px 12px; cursor:pointer; }
-  button.danger { color:var(--bad); }
-  .ok { color:var(--ok); } .bad { color:var(--bad); } .mute { color:var(--mute); }
-  pre { margin:0; font:12px/1.5 ui-monospace, monospace; white-space:pre-wrap; max-height:200px; overflow:auto; }
-  a { color:var(--accent); }
+  @font-face { font-family: "Figtree"; src: url("/figtree.woff2") format("woff2-variations"); font-weight: 300 900; }
+  :root {
+    --bg: #e9e3e3; --ink: #1d1d1f; --mute: #6e6e73; --hair: rgba(60, 60, 67, .14);
+    --wine: #8a0a0c; --slate: #636c88;
+    /* Apple system colours */
+    --blue: #007aff; --red: #ff3b30; --green: #34c759; --fill: rgba(120, 120, 128, .14); --fill-hover: rgba(120, 120, 128, .22);
+    --glow-a: rgba(150, 8, 16, .55); --glow-b: rgba(0, 0, 0, .55); --glow-c: rgba(95, 0, 8, .40);
+    --g-top: rgba(255, 255, 255, .50); --g-bot: rgba(255, 255, 255, .20);
+    --rim-a: rgba(255, 255, 255, .95); --rim-b: rgba(255, 255, 255, .18);
+    --shadow: 0 1px 1px rgba(0, 0, 0, .04), 0 12px 32px rgba(30, 30, 60, .12);
+    --cell: rgba(255, 255, 255, .45);
+    --font: "Figtree", -apple-system, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "Figtree", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0405; --ink: #f5f5f7; --mute: #98989d; --hair: rgba(235, 235, 245, .12);
+      --wine: #d0262a; --slate: #8d97b8;
+      --blue: #0a84ff; --red: #ff453a; --green: #30d158; --fill: rgba(120, 120, 128, .26); --fill-hover: rgba(120, 120, 128, .36);
+      --glow-a: rgba(150, 10, 18, .62); --glow-b: rgba(0, 0, 0, .85); --glow-c: rgba(90, 0, 8, .55);
+      --g-top: rgba(255, 255, 255, .12); --g-bot: rgba(255, 255, 255, .04);
+      --rim-a: rgba(255, 255, 255, .36); --rim-b: rgba(255, 255, 255, .05);
+      --shadow: 0 1px 1px rgba(0, 0, 0, .3), 0 16px 40px rgba(0, 0, 0, .45);
+      --cell: rgba(255, 255, 255, .06);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+
+  /* ---------- colour behind the glass ---------- */
+  .bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bg i { position: absolute; border-radius: 50%; filter: blur(40px); }
+  .bg .a { width: 70vmax; height: 70vmax; left: -25vmax; top: -18vmax; background: radial-gradient(circle, var(--glow-a), transparent 65%); animation: drift-a 22s ease-in-out infinite alternate; }
+  .bg .b { width: 75vmax; height: 75vmax; right: -30vmax; bottom: -25vmax; background: radial-gradient(circle, var(--glow-b), transparent 65%); animation: drift-b 26s ease-in-out infinite alternate; }
+  .bg .c { width: 50vmax; height: 50vmax; left: 30%; top: 35%; background: radial-gradient(circle, var(--glow-c), transparent 65%); animation: drift-a 30s ease-in-out infinite alternate-reverse; }
+  @keyframes drift-a { to { transform: translate(14vmax, 10vmax) scale(1.1); } }
+  @keyframes drift-b { to { transform: translate(-12vmax, -14vmax) scale(.92); } }
+  body.off .bg .a { --glow-a: rgba(120, 120, 128, .30); }
+
+  /* ---------- glass ---------- */
+  .glass {
+    position: relative; border-radius: 20px; isolation: isolate;
+    background: radial-gradient(120% 80% at 15% 0%, rgba(255, 255, 255, .22), transparent 55%),
+                linear-gradient(180deg, var(--g-top), var(--g-bot));
+    -webkit-backdrop-filter: blur(26px) saturate(190%) brightness(1.04);
+    backdrop-filter: blur(26px) saturate(190%) brightness(1.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -1px 0 rgba(255, 255, 255, .08), var(--shadow);
+  }
+  /* cut-glass rim: a light gradient border */
+  .glass::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.2px; pointer-events: none; z-index: -1;
+    background: linear-gradient(150deg, var(--rim-a), var(--rim-b) 38%, var(--rim-b) 62%, var(--rim-a));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+  /* sheen across the top */
+  .glass::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+    background: linear-gradient(115deg, rgba(255, 255, 255, .20) 0%, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, .07) 100%);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass { background: var(--bg); }
+  }
+  @media (prefers-reduced-motion: reduce) { .bg i { animation: none; } }
+
+  /* ---------- layout ---------- */
+  header { position: sticky; top: 0; z-index: 3; margin: 10px 10px 0; height: 46px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
+    font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  .mark { display: inline-flex; gap: .9em; } .mark .a { font-weight: 300; } .mark .b { font-weight: 650; }
+  .ver { color: var(--mute); letter-spacing: .02em; text-transform: none; font-family: var(--ui); }
+  main { position: relative; z-index: 1; padding: 12px 10px 8px; max-width: 560px; margin: 0 auto; display: grid; gap: 12px; }
+  .card { padding: 18px; }
+  h2 { margin: 0 0 12px; font: 600 12px/1 var(--ui); letter-spacing: .02em; color: var(--mute); }
+  .sq { display: inline-block; width: 9px; height: 9px; flex: none; border-radius: 2px; }
+  .sq.pc { background: var(--wine); } .sq.web { background: var(--slate); }
+
+  /* state */
+  .state { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+  .wire { height: 2px; border-radius: 2px; background: var(--hair); position: relative; overflow: hidden; }
+  .wire::after { content: ""; position: absolute; inset: 0; background: var(--green); transform: scaleX(0); transform-origin: left; transition: transform .6s ease; }
+  .live .wire::after { transform: scaleX(1); }
+  .waiting .wire::after { background: var(--ink); opacity: .55; animation: seek 2.4s ease-in-out infinite; }
+  @keyframes seek { 0% { transform: translateX(-30%) scaleX(.3); } 100% { transform: translateX(100%) scaleX(.3); } }
+  @media (prefers-reduced-motion: reduce) { .waiting .wire::after { animation: none; transform: scaleX(.3); } }
+  .off .state .sq { background: var(--mute); opacity: .5; }
+  .headline { margin: 14px 0 2px; font-size: 27px; font-weight: 400; line-height: 1.15; letter-spacing: -.015em; }
+  .sub { color: var(--mute); font-size: 13.5px; margin-bottom: 16px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; vertical-align: 1px; box-shadow: 0 0 0 3px rgba(52, 199, 89, .2); }
+  .off .dot { background: var(--mute); box-shadow: none; }
+
+  /* fields */
+  .field { display: grid; gap: 6px; padding: 12px 0; }
+  .field + .field { border-top: 1px solid var(--hair); }
+  .field:first-of-type { padding-top: 0; }
+  .label { font: 500 12px/1 var(--ui); color: var(--mute); display: flex; align-items: center; gap: 8px; }
+  .big { font-size: 30px; font-weight: 500; letter-spacing: .05em; font-variant-numeric: tabular-nums; user-select: all; }
+  .link { font-size: 13px; word-break: break-all; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .dim { opacity: .45; filter: saturate(.4); transition: opacity .3s; }
+
+  /* ---------- Apple-style buttons ---------- */
+  .btn {
+    appearance: none; border: 0; cursor: pointer; font: 590 13px/1 var(--ui); letter-spacing: -.005em;
+    height: 30px; padding: 0 14px; border-radius: 8px; color: var(--blue); background: var(--fill);
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    transition: background .15s ease, transform .12s ease, opacity .15s ease, filter .15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:hover { background: var(--fill-hover); }
+  .btn:active { transform: scale(.97); opacity: .85; }
+  .btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: 1px; }
+  .btn.filled { background: var(--blue); color: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .12), inset 0 1px 0 rgba(255, 255, 255, .18); }
+  .btn.filled:hover { filter: brightness(1.08); background: var(--blue); }
+  .btn.red { color: var(--red); background: color-mix(in srgb, var(--red) 13%, transparent); }
+  .btn.red:hover { background: color-mix(in srgb, var(--red) 20%, transparent); }
+  .btn.plain { background: transparent; padding: 0 6px; }
+  .btn.plain:hover { background: var(--fill); }
+  .btn.lg { width: 100%; height: 46px; border-radius: 12px; font-size: 16px; }
+  .btn svg { width: 16px; height: 16px; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 14px; }
+  .stats div { background: var(--cell); border-radius: 12px; padding: 10px 12px; box-shadow: inset 0 0 0 1px var(--hair); }
+  .stats b { display: block; font-size: 19px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .stats span { font: 500 11px/1.2 var(--ui); color: var(--mute); }
+
+  /* health */
+  .health { display: grid; gap: 10px; }
+  .health .item { display: grid; grid-template-columns: 120px 1fr; gap: 12px; font-size: 13.5px; align-items: baseline; }
+  .health .k { color: var(--mute); font: 500 12px/1.3 var(--ui); }
+  .ok { color: var(--green); } .bad { color: var(--red); } .mute { color: var(--mute); }
+
+  details summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary h2 { margin: 0; }
+  details summary::after { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--mute); border-bottom: 2px solid var(--mute); transform: rotate(-45deg); transition: transform .2s; margin-right: 4px; }
+  details[open] summary::after { transform: rotate(45deg); }
+  pre { margin: 14px 0 10px; padding: 12px; border-radius: 12px; background: var(--cell); box-shadow: inset 0 0 0 1px var(--hair);
+    font: 11.5px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+  footer { position: relative; z-index: 1; padding: 10px 20px 22px; max-width: 560px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  footer p { margin: 0; font-size: 12px; color: var(--mute); flex: 1 1 220px; }
+  /* Apple-style alert */
+  .scrim { position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; padding: 24px;
+    background: rgba(0, 0, 0, .22); opacity: 0; pointer-events: none; transition: opacity .18s; }
+  .scrim.on { opacity: 1; pointer-events: auto; }
+  .alert { width: min(300px, 100%); border-radius: 18px; text-align: center; transform: scale(1.06); transition: transform .2s cubic-bezier(.2, .9, .3, 1.2); }
+  .scrim.on .alert { transform: scale(1); }
+  .alert .body { padding: 20px 18px 16px; }
+  .alert h3 { margin: 0 0 6px; font: 600 16px/1.3 var(--ui); }
+  .alert p { margin: 0; font: 400 13px/1.4 var(--ui); color: var(--mute); }
+  .alert .acts { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--hair); }
+  .alert .acts button { appearance: none; border: 0; background: transparent; height: 46px; font: 400 16px/1 var(--ui); color: var(--blue); cursor: pointer; }
+  .alert .acts button + button { border-left: 1px solid var(--hair); font-weight: 600; }
+  .alert .acts button.danger { color: var(--red); }
+  .alert .acts button:active { background: var(--fill); }
+  .toast { position: fixed; z-index: 9; left: 50%; bottom: 20px; transform: translate(-50%, 8px); padding: 9px 16px; border-radius: 999px;
+    font: 590 13px/1 var(--ui); opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
 </style>
 </head>
 <body>
+<div class="bg" aria-hidden="true"><i class="a"></i><i class="b"></i><i class="c"></i></div>
+
+<header class="glass"><div class="mark"><span class="a">Every</span><span class="b">Where</span></div><span class="ver" id="ver"></span></header>
+
 <main>
-  <h1>Everywhere</h1>
-  <div class="card">
-    <p style="margin-top:0">On any laptop, open <a id="url" target="_blank" rel="noopener"></a> and type:</p>
-    <div class="grid">
-      <div><div class="label">PC code</div><div class="big" id="code">…</div></div>
-      <div><div class="label">Password</div><div class="big" id="pw">••••-••••-••••</div>
-        <div class="row" style="margin-top:6px"><button id="show">Show</button><button id="copy">Copy</button></div></div>
+  <section class="glass card" id="state-card">
+    <div id="state" class="waiting">
+      <div class="state"><i class="sq pc"></i><div class="wire"></div><i class="sq web"></i></div>
+      <p class="headline" id="headline">Starting…</p>
+      <div class="sub" id="subline">&nbsp;</div>
     </div>
-  </div>
-  <div class="card">
-    <div class="label">Now</div>
-    <div id="session" class="mute">Nobody connected.</div>
-    <div class="row" style="margin-top:10px"><button class="danger" id="kick" hidden>Disconnect</button></div>
-  </div>
-  <div class="card grid">
-    <div><div class="label">Meeting point</div><div id="relays">…</div></div>
-    <div><div class="label">Wrong passwords today</div><div id="guard">…</div>
-      <button id="unlock" hidden style="margin-top:6px">Unlock</button></div>
-  </div>
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><div class="label">Activity</div><button id="newpw" class="danger">New password</button></div>
-    <pre id="events"></pre>
-    <p class="mute" style="margin-bottom:0;font-size:13px">Settings file: <span id="cfg"></span></p>
-  </div>
+    <button class="btn lg red" id="share">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>
+      <span>Stop sharing</span>
+    </button>
+  </section>
+
+  <section class="glass card" id="session" hidden>
+    <h2>Now streaming</h2>
+    <div class="stats">
+      <div><b id="s-size">–</b><span>Picture</span></div>
+      <div><b id="s-fps">–</b><span>Frames/s</span></div>
+      <div><b id="s-rate">–</b><span>Mbit/s</span></div>
+      <div><b id="s-path">–</b><span>Path</span></div>
+      <div><b id="s-time">–</b><span>Time</span></div>
+      <div><b id="s-audio">–</b><span>Sound</span></div>
+    </div>
+    <button class="btn red" id="kick">Disconnect this browser</button>
+  </section>
+
+  <section class="glass card" id="connect-info">
+    <h2>To use this PC from another computer</h2>
+    <div class="field">
+      <div class="label">1 · Open this page</div>
+      <div class="link" id="url">…</div>
+      <div class="row"><button class="btn filled" id="open">Open</button><button class="btn" id="copy-url">Copy link</button></div>
+    </div>
+    <div class="field">
+      <div class="label"><i class="sq pc"></i>2 · PC code</div>
+      <div class="big" id="code">…</div>
+    </div>
+    <div class="field">
+      <div class="label"><i class="sq web"></i>3 · Password</div>
+      <div class="big" id="pw">••••-••••-••••</div>
+      <div class="row"><button class="btn" id="show">Show</button><button class="btn" id="copy-pw">Copy</button></div>
+    </div>
+  </section>
+
+  <section class="glass card">
+    <h2>Health</h2>
+    <div class="health">
+      <div id="checks" style="display:contents"></div>
+      <div class="item"><div class="k">Meeting point</div><div id="relays">…</div></div>
+      <div class="item"><div class="k">Network</div><div id="network" class="mute">Checking…</div></div>
+      <div class="item"><div class="k">Wrong passwords</div><div class="row"><span id="guard">…</span><button class="btn" id="unlock" hidden>Unlock</button></div></div>
+    </div>
+  </section>
+
+  <section class="glass card">
+    <details id="details">
+      <summary><h2>Activity</h2></summary>
+      <pre id="events"></pre>
+      <div class="row"><button class="btn" id="copy-log">Copy log</button><span class="mute" style="font-size:12px">Saved in <span id="cfg"></span></span></div>
+    </details>
+  </section>
 </main>
+
+<footer>
+  <p id="closing">Leave this running while you are away.</p>
+  <button class="btn plain" id="newpw" style="color:var(--red)">New password</button>
+</footer>
+<div class="toast glass" id="toast"></div>
+<div class="scrim" id="scrim" role="dialog" aria-modal="true" aria-labelledby="a-title">
+  <div class="alert glass"><div class="body"><h3 id="a-title"></h3><p id="a-text"></p></div>
+    <div class="acts"><button id="a-no">Cancel</button><button id="a-yes" class="danger"></button></div></div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
+const app = new URLSearchParams(location.search).has('app');
+if (app) $('closing').textContent = 'Closing this window stops Everywhere. Minimise it to keep your PC reachable.';
 const api = (path, method = 'GET') => fetch(path, { method, headers: { 'X-Everywhere': '1' } }).then((r) => r.ok ? r.json() : Promise.reject(r.status));
-let shown = false, pw = '';
-async function refresh() {
-  try {
-    const s = await api('/api/status');
-    pw = s.password;
-    $('code').textContent = s.pc_code;
-    $('pw').textContent = shown ? s.password : '••••-••••-••••';
-    $('url').textContent = s.web_url; $('url').href = s.web_url;
-    $('relays').innerHTML = s.relays_up > 0
-      ? `<span class="ok">Reachable</span> <span class="mute">(${s.relays_up}/${s.relays_total} relays)</span>`
-      : `<span class="bad">Not reachable</span> <span class="mute">(0/${s.relays_total} relays; check the internet connection)</span>`;
-    const g = s.guard;
-    $('guard').innerHTML = g.locked ? '<span class="bad">Locked after too many wrong passwords</span>' : `${g.failures_today}`;
-    $('unlock').hidden = !g.locked;
-    const x = s.session;
-    if (x) {
-      $('session').innerHTML = `<b>${x.state}</b> · ${x.path || 'finding a path…'}<br>
-        <span class="mute">${x.width}x${x.height} · ${x.fps.toFixed(0)} fps · ${x.bitrate_mbps.toFixed(1)} Mbit/s · ${x.encoder} · audio ${x.audio ? 'on' : 'off'} · ${x.input_events} inputs · ${x.started_secs_ago}s</span>`;
-      $('kick').hidden = false;
-    } else { $('session').textContent = 'Nobody connected.'; $('kick').hidden = true; }
-    $('events').textContent = s.events.slice().reverse().join('\n');
-    $('cfg').textContent = s.config_path;
-  } catch (e) { $('relays').innerHTML = '<span class="bad">Host not running</span>'; }
+let shown = false, last = null;
+
+function toast(text) {
+  $('toast').textContent = text; $('toast').classList.add('on');
+  clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('on'), 1400);
 }
+async function copy(text, what) {
+  try { await navigator.clipboard.writeText(text); toast(`${what} copied`); }
+  catch (_) {
+    const t = document.createElement('textarea'); t.value = text; document.body.append(t); t.select();
+    try { document.execCommand('copy'); toast(`${what} copied`); } catch (_) { toast('Copy failed'); }
+    t.remove();
+  }
+}
+/** In-page confirmation (web views do not all show window.confirm). */
+function ask(title, text, yes) {
+  return new Promise((resolve) => {
+    $('a-title').textContent = title; $('a-text').textContent = text; $('a-yes').textContent = yes;
+    $('scrim').classList.add('on'); $('a-no').focus();
+    const done = (v) => { $('scrim').classList.remove('on'); $('a-yes').onclick = $('a-no').onclick = document.onkeydown = null; resolve(v); };
+    $('a-yes').onclick = () => done(true);
+    $('a-no').onclick = () => done(false);
+    document.onkeydown = (e) => { if (e.key === 'Escape') done(false); };
+  });
+}
+const dur = (s) => s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m`;
+const STOP = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg><span>Stop sharing</span>';
+const START = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L5.9 2.7a.6.6 0 0 0-.9.5z"/></svg><span>Start sharing</span>';
+
+async function refresh() {
+  let s;
+  try { s = await api('/api/status'); } catch (_) {
+    $('state').className = ''; $('headline').textContent = 'Everywhere is not running'; $('subline').textContent = 'Start it again to use this PC from elsewhere.';
+    $('share').hidden = true;
+    return;
+  }
+  last = s;
+  $('share').hidden = false;
+  $('ver').textContent = `v${s.version}`;
+  $('code').textContent = s.pc_code;
+  $('pw').textContent = shown ? s.password : '••••-••••-••••';
+  $('url').textContent = s.web_url;
+
+  const x = s.session;
+  const reachable = s.relays_up > 0;
+  const streaming = x && x.state === 'streaming';
+  document.body.classList.toggle('off', s.paused);
+  $('connect-info').classList.toggle('dim', s.paused);
+  // Only touch the button when the state flips (rebuilding it every second
+  // could swallow a click that lands mid-update).
+  if ($('share').dataset.paused !== String(s.paused)) {
+    $('share').dataset.paused = String(s.paused);
+    $('share').className = s.paused ? 'btn lg filled' : 'btn lg red';
+    $('share').innerHTML = s.paused ? START : STOP;
+  }
+  if (s.paused) {
+    $('state').className = 'off';
+    $('headline').textContent = 'Sharing is off';
+    $('subline').innerHTML = '<span class="dot"></span>Nobody can connect until you start sharing again.';
+  } else if (streaming) {
+    $('state').className = 'live';
+    $('headline').textContent = 'Someone is using this PC';
+    $('subline').innerHTML = `<span class="dot"></span>${x.path ? `Connected · ${x.path}` : 'Connected'}`;
+  } else if (x) {
+    $('state').className = 'waiting';
+    $('headline').textContent = 'A browser is connecting…';
+    $('subline').textContent = 'The password was right; finding a direct path.';
+  } else {
+    $('state').className = reachable ? 'waiting' : '';
+    $('headline').textContent = reachable ? 'Ready for a browser' : 'Waiting for the internet';
+    $('subline').innerHTML = reachable ? '<span class="dot"></span>Sharing is on. Open the page below on any laptop.' : 'The meeting point cannot be reached yet.';
+  }
+  $('session').hidden = !streaming;
+  if (x) {
+    $('s-size').textContent = x.height ? `${x.height}p` : '–';
+    $('s-fps').textContent = (x.fps || 0).toFixed(0);
+    $('s-rate').textContent = (x.bitrate_mbps || 0).toFixed(1);
+    $('s-path').textContent = (x.path || '–').replace(/ \(.*\)/, '');
+    $('s-time').textContent = dur(x.started_secs_ago || 0);
+    $('s-audio').textContent = x.audio ? 'On' : 'Off';
+  }
+
+  // Permissions and session checks; only rebuilt when they change, so a
+  // click on "Open Settings" is never lost to the refresh.
+  const checksKey = JSON.stringify(s.checks || []);
+  if ($('checks').dataset.key !== checksKey) {
+    $('checks').dataset.key = checksKey;
+    $('checks').replaceChildren(...(s.checks || []).map((c) => {
+      const row = document.createElement('div'); row.className = 'item';
+      const k = document.createElement('div'); k.className = 'k'; k.textContent = c.name;
+      const v = document.createElement('div');
+      const t = document.createElement('span'); t.className = c.ok ? 'ok' : 'bad'; t.textContent = c.ok ? c.detail : c.detail;
+      v.append(t);
+      if (!c.ok && c.fix) {
+        const b = document.createElement('button'); b.className = 'btn'; b.style.marginTop = '6px'; b.style.display = 'flex';
+        b.textContent = 'Open Settings';
+        b.onclick = () => api(`/api/open-settings?which=${encodeURIComponent(c.fix)}`, 'POST');
+        v.append(b);
+      }
+      row.append(k, v);
+      return row;
+    }));
+  }
+  const missing = (s.checks || []).filter((c) => !c.ok);
+  if (missing.length && !s.paused && !streaming) {
+    $('subline').textContent = `Before you leave: allow ${missing.map((c) => c.name.toLowerCase()).join(' and ')} below.`;
+  }
+  $('relays').innerHTML = reachable
+    ? `<span class="ok">Reachable</span> <span class="mute">· ${s.relays_up} of ${s.relays_total} relays</span>`
+    : `<span class="bad">Not reachable</span> <span class="mute">· check the internet connection</span>`;
+  $('network').textContent = s.network || 'Checking…';
+  $('network').className = /strict|blocked|could not/i.test(s.network) ? 'bad' : (s.network ? '' : 'mute');
+  const g = s.guard;
+  $('guard').innerHTML = g.locked ? '<span class="bad">Locked after too many tries</span>' : `${g.failures_today} today`;
+  $('unlock').hidden = !g.locked;
+
+  const ev = $('events');
+  const atBottom = ev.scrollHeight - ev.scrollTop - ev.clientHeight < 20;
+  ev.textContent = s.events.join('\n');
+  if (atBottom) ev.scrollTop = ev.scrollHeight;
+  $('cfg').textContent = s.config_path.replace(/[\\/][^\\/]*$/, '');
+}
+
+$('share').onclick = () => {
+  if (!last) return;
+  if (last.paused) return api('/api/start-sharing', 'POST').then(() => { toast('Sharing is on'); refresh(); });
+  const msg = last.session ? 'The browser using this PC is disconnected now, and nobody can connect until you start sharing again.'
+                           : 'Nobody can connect to this PC until you start sharing again.';
+  ask('Stop sharing?', msg, 'Stop').then((yes) => yes && api('/api/stop-sharing', 'POST').then(() => { toast('Sharing stopped'); refresh(); }));
+};
 $('show').onclick = () => { shown = !shown; $('show').textContent = shown ? 'Hide' : 'Show'; refresh(); };
-$('copy').onclick = () => navigator.clipboard.writeText(pw);
+$('copy-pw').onclick = () => last && copy(last.password, 'Password');
+$('copy-url').onclick = () => last && copy(last.web_url, 'Link');
+$('open').onclick = () => api('/api/open-web', 'POST');
+$('copy-log').onclick = () => last && copy(last.events.join('\n'), 'Log');
 $('kick').onclick = () => api('/api/disconnect', 'POST').then(refresh);
 $('unlock').onclick = () => api('/api/unlock', 'POST').then(refresh);
-$('newpw').onclick = () => { if (confirm('Make a new password? The old one stops working and anyone connected is disconnected.')) api('/api/new-password', 'POST').then(refresh); };
+$('newpw').onclick = () => {
+  ask('Make a new password?', 'The old one stops working and anyone connected is disconnected.', 'Make new')
+    .then((yes) => yes && api('/api/new-password', 'POST').then(() => { toast('New password made'); refresh(); }));
+};
 refresh(); setInterval(refresh, 1000);
 </script>
 </body>

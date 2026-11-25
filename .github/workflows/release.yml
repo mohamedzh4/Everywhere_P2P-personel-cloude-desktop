@@ -1,5 +1,6 @@
-# Builds the Windows host when a version tag is pushed (git tag v0.1.0 &&
-# git push --tags) and attaches it to a GitHub Release.
+# Builds the host for Windows, macOS and Linux when a version tag is pushed
+# (git tag v0.1.2 && git push origin v0.1.2) and attaches all three to one
+# GitHub Release.
 name: Release
 on:
   push:
@@ -32,8 +33,69 @@ jobs:
           Copy-Item host/target/release/everywhere-host.exe dist/Everywhere.exe
           Copy-Item docs/install-windows.md dist/README.md
           Compress-Archive -Path dist/* -DestinationPath "Everywhere-${{ github.ref_name }}-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: Everywhere-*-windows-x64.zip
+
+  macos:
+    # Apple Silicon (every Mac since late 2020).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        working-directory: host
+        run: cargo test --release
+      - name: Build
+        working-directory: host
+        run: cargo build --release
+      - name: Package
+        run: |
+          packaging/macos/make-app.sh host/target/release/everywhere-host dist
+          cp docs/install-mac.md dist/README.md
+          cd dist && ditto -c -k --keepParent Everywhere.app "../Everywhere-${{ github.ref_name }}-macos-arm64.zip"
+          cd .. && zip -j "Everywhere-${{ github.ref_name }}-macos-arm64.zip" dist/README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: Everywhere-*-macos-arm64.zip
+
+  linux:
+    # Built on an older Ubuntu so the binary runs on older distributions too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System libraries (OpenSSL, CMake for Opus)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev cmake pkg-config
+      - name: Test
+        working-directory: host
+        run: cargo test --release
+      - name: Build
+        working-directory: host
+        run: cargo build --release
+      - name: Package
+        run: |
+          mkdir -p "dist/Everywhere-${{ github.ref_name }}"
+          cp host/target/release/everywhere-host "dist/Everywhere-${{ github.ref_name }}/everywhere"
+          cp docs/install-linux.md "dist/Everywhere-${{ github.ref_name }}/README.md"
+          tar -C dist -czf "Everywhere-${{ github.ref_name }}-linux-x64.tar.gz" "Everywhere-${{ github.ref_name }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: Everywhere-*-linux-x64.tar.gz
+
+  publish:
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: gh release create "${{ github.ref_name }}" "Everywhere-${{ github.ref_name }}-windows-x64.zip" --title "Everywhere ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" out/* --title "Everywhere ${{ github.ref_name }}" --generate-notes

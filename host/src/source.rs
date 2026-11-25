@@ -28,24 +28,36 @@ pub trait Source: Send {
     fn capture(&mut self, frame: &mut RawFrame) -> Result<(), String>;
 }
 
-/// Pick a source by name. "screen" falls back to the pattern where screen
-/// capture is not built (non-Windows) or fails to start.
-pub fn open(name: &str, width: usize, height: usize) -> Box<dyn Source> {
+/// Pick a source by name. "screen" falls back to the test pattern when the
+/// screen cannot be captured (no permission, Wayland, no display).
+pub fn open(name: &str, width: usize, height: usize, fps: u32) -> Box<dyn Source> {
+    let _ = fps;
     if name == "screen" {
         #[cfg(windows)]
-        match dxgi::Screen::new(width, height) {
-            Ok(s) => return Box::new(s),
-            Err(e) => eprintln!("screen capture unavailable ({e}); using the test pattern"),
+        let screen = dxgi::Screen::new(width, height).map(|s| Box::new(s) as Box<dyn Source>);
+        #[cfg(target_os = "macos")]
+        let screen = mac::Screen::new(width, height, fps).map(|s| Box::new(s) as Box<dyn Source>);
+        #[cfg(target_os = "linux")]
+        let screen = x11::Screen::new(width, height).map(|s| Box::new(s) as Box<dyn Source>);
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+        let screen: Result<Box<dyn Source>, String> = Err("no screen capture on this system".into());
+        match screen {
+            Ok(s) => return s,
+            Err(e) => crate::say!("screen capture unavailable: {e}. Showing a test pattern instead."),
         }
-        #[cfg(not(windows))]
-        eprintln!("screen capture is Windows-only for now; using the test pattern");
     }
     Box::new(TestPattern::new(width, height))
 }
 
-/// BGRA (as captured on Windows) to I420, BT.709 limited range, with a
+#[cfg(target_os = "macos")]
+#[path = "capture_mac.rs"]
+mod mac;
+#[cfg(target_os = "linux")]
+#[path = "capture_x11.rs"]
+mod x11;
+
+/// BGRA (as captured on every system) to I420, BT.709 limited range, with a
 /// nearest-sample resize from `sw`x`sh` to the frame size.
-#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub fn bgra_to_i420(src: &[u8], sw: usize, sh: usize, pitch: usize, frame: &mut RawFrame) {
     let (w, h) = (frame.width, frame.height);
     let (y, u, v) = frame.planes_mut();
@@ -67,6 +79,115 @@ pub fn bgra_to_i420(src: &[u8], sw: usize, sh: usize, pitch: usize, frame: &mut 
             let (r, g, b) = px(col * 2, row * 2);
             u[row * cw + col] = ((-26 * r - 87 * g + 112 * b + 128) / 256 + 128).clamp(0, 255) as u8;
             v[row * cw + col] = ((112 * r - 102 * g - 10 * b + 128) / 256 + 128).clamp(0, 255) as u8;
+        }
+    }
+}
+
+/// The mouse pointer as drawn on the PC. Screen capture leaves it out of the
+/// picture, so it is drawn into each frame before encoding.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cursor {
+    pub w: usize,
+    pub h: usize,
+    pub px: Vec<Px>,
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Px {
+    Clear,
+    /// r, g, b, alpha (0-255)
+    Rgba(u8, u8, u8, u8),
+    /// Inverts what is underneath (the I-beam text cursor does this).
+    Invert,
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+impl Cursor {
+    /// 1 bit per pixel: an AND mask (first half) above an XOR mask.
+    pub fn monochrome(buf: &[u8], w: usize, h2: usize, pitch: usize) -> Option<Self> {
+        let h = h2 / 2;
+        let bit = |row: usize, col: usize| buf.get(row * pitch + col / 8).map(|b| (b >> (7 - col % 8)) & 1);
+        let mut px = Vec::with_capacity(w * h);
+        for row in 0..h {
+            for col in 0..w {
+                px.push(match (bit(row, col)?, bit(row + h, col)?) {
+                    (0, 0) => Px::Rgba(0, 0, 0, 255),
+                    (0, _) => Px::Rgba(255, 255, 255, 255),
+                    (_, 0) => Px::Clear,
+                    _ => Px::Invert,
+                });
+            }
+        }
+        Some(Self { w, h, px })
+    }
+
+    /// 32-bit BGRA. `masked`: alpha 0 means opaque colour, alpha 255 means
+    /// XOR with the screen (black = no change); otherwise ordinary alpha.
+    pub fn color(buf: &[u8], w: usize, h: usize, pitch: usize, masked: bool) -> Option<Self> {
+        let mut px = Vec::with_capacity(w * h);
+        for row in 0..h {
+            for col in 0..w {
+                let o = row * pitch + col * 4;
+                let [b, g, r, a]: [u8; 4] = buf.get(o..o + 4)?.try_into().ok()?;
+                px.push(match (masked, a) {
+                    (true, 0) => Px::Rgba(r, g, b, 255),
+                    (true, _) if (r, g, b) == (0, 0, 0) => Px::Clear,
+                    (true, _) => Px::Invert,
+                    (false, 0) => Px::Clear,
+                    (false, a) => Px::Rgba(r, g, b, a),
+                });
+            }
+        }
+        Some(Self { w, h, px })
+    }
+
+    /// Draw with its top-left at (`x`, `y`) in screen pixels of a
+    /// `sw`x`sh` screen, scaled to the frame like the picture.
+    pub fn draw(&self, frame: &mut RawFrame, x: i32, y: i32, sw: usize, sh: usize) {
+        let (fw, fh) = (frame.width as i64, frame.height as i64);
+        let (sw, sh) = (sw.max(1) as i64, sh.max(1) as i64);
+        let (x, y) = (x as i64, y as i64);
+        let fx0 = (x * fw).div_euclid(sw).max(0);
+        let fy0 = (y * fh).div_euclid(sh).max(0);
+        let fx1 = ((x + self.w as i64) * fw).div_euclid(sw).min(fw);
+        let fy1 = ((y + self.h as i64) * fh).div_euclid(sh).min(fh);
+        let (width, cw) = (frame.width, frame.width / 2);
+        let (yp, up, vp) = frame.planes_mut();
+        for fy in fy0..fy1 {
+            let cy = fy * sh / fh - y;
+            if cy < 0 || cy >= self.h as i64 {
+                continue;
+            }
+            for fx in fx0..fx1 {
+                let cx = fx * sw / fw - x;
+                if cx < 0 || cx >= self.w as i64 {
+                    continue;
+                }
+                let yi = fy as usize * width + fx as usize;
+                let ci = (fy as usize / 2) * cw + fx as usize / 2;
+                let chroma = fx % 2 == 0 && fy % 2 == 0;
+                match self.px[cy as usize * self.w + cx as usize] {
+                    Px::Clear => {}
+                    Px::Invert => {
+                        yp[yi] = 251u8.saturating_sub(yp[yi]).clamp(16, 235);
+                        if chroma {
+                            up[ci] = 255 - up[ci];
+                            vp[ci] = 255 - vp[ci];
+                        }
+                    }
+                    Px::Rgba(r, g, b, a) => {
+                        let (r, g, b, a) = (r as i32, g as i32, b as i32, a as i32);
+                        let mix = |old: u8, new: i32| ((old as i32 * (255 - a) + new * a) / 255).clamp(0, 255) as u8;
+                        yp[yi] = mix(yp[yi], (47 * r + 157 * g + 16 * b + 128) / 256 + 16);
+                        if chroma {
+                            up[ci] = mix(up[ci], (-26 * r - 87 * g + 112 * b + 128) / 256 + 128);
+                            vp[ci] = mix(vp[ci], (112 * r - 102 * g - 10 * b + 128) / 256 + 128);
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -124,7 +245,7 @@ mod dxgi {
     //! desktop into a CPU-readable texture, which is converted to I420.
     //! Phase 1b hands the GPU texture straight to NVENC instead (zero copy).
 
-    use super::{bgra_to_i420, RawFrame, Source};
+    use super::{bgra_to_i420, Cursor, RawFrame, Source};
     use windows::core::Interface;
     use windows::Win32::Foundation::HMODULE;
     use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
@@ -142,6 +263,10 @@ mod dxgi {
         src_w: usize,
         src_h: usize,
         have_frame: bool,
+        cursor: Option<Cursor>,
+        cursor_at: (i32, i32),
+        cursor_visible: bool,
+        shape_buf: Vec<u8>,
     }
 
     // COM objects are used from the encode thread only.
@@ -183,8 +308,32 @@ mod dxgi {
             let scale = (width as f64 / src_w as f64).min(height as f64 / src_h as f64).min(1.0);
             let w = ((src_w as f64 * scale) as usize) & !1;
             let h = ((src_h as f64 * scale) as usize) & !1;
-            println!("screen {src_w}x{src_h}, streaming at {w}x{h}");
-            Ok(Self { width: w, height: h, device, ctx, dup: Some(dup), staging: None, src_w, src_h, have_frame: false })
+            crate::say!("screen {src_w}x{src_h}, streaming at {w}x{h}");
+            Ok(Self { width: w, height: h, device, ctx, dup: Some(dup), staging: None, src_w, src_h, have_frame: false,
+                cursor: None, cursor_at: (0, 0), cursor_visible: false, shape_buf: Vec::new() })
+        }
+
+        fn read_cursor_shape(&mut self, dup: &IDXGIOutputDuplication, size: u32) {
+            self.shape_buf.resize(size as usize, 0);
+            let mut needed = 0u32;
+            let mut si = DXGI_OUTDUPL_POINTER_SHAPE_INFO::default();
+            let ok = unsafe {
+                dup.GetFramePointerShape(size, self.shape_buf.as_mut_ptr().cast(), &mut needed, &mut si)
+            };
+            if ok.is_err() {
+                return;
+            }
+            let (w, h, pitch) = (si.Width as usize, si.Height as usize, si.Pitch as usize);
+            let buf = &self.shape_buf[..];
+            let shape = match si.Type as i32 {
+                t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME.0 => Cursor::monochrome(buf, w, h, pitch),
+                t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR.0 => Cursor::color(buf, w, h, pitch, false),
+                t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR.0 => Cursor::color(buf, w, h, pitch, true),
+                _ => None,
+            };
+            if shape.is_some() {
+                self.cursor = shape;
+            }
         }
 
         fn staging_for(&mut self, tex: &ID3D11Texture2D) -> windows::core::Result<ID3D11Texture2D> {
@@ -237,6 +386,13 @@ mod dxgi {
                 }
                 Err(e) => return Err(format!("AcquireNextFrame: {e}")),
             }
+            if info.LastMouseUpdateTime != 0 {
+                self.cursor_visible = info.PointerPosition.Visible.as_bool();
+                self.cursor_at = (info.PointerPosition.Position.x, info.PointerPosition.Position.y);
+            }
+            if info.PointerShapeBufferSize > 0 {
+                self.read_cursor_shape(&dup, info.PointerShapeBufferSize);
+            }
             let result = (|| -> windows::core::Result<()> {
                 let res = res.ok_or_else(|| windows::core::Error::from_hresult(windows::Win32::Foundation::E_POINTER))?;
                 let tex: ID3D11Texture2D = res.cast()?;
@@ -256,6 +412,9 @@ mod dxgi {
                 let _ = dup.ReleaseFrame();
             }
             result.map_err(|e| format!("copy frame: {e}"))?;
+            if let (true, Some(c)) = (self.cursor_visible, &self.cursor) {
+                c.draw(frame, self.cursor_at.0, self.cursor_at.1, self.src_w, self.src_h);
+            }
             self.have_frame = true;
             Ok(())
         }
@@ -265,6 +424,38 @@ mod dxgi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monochrome_cursor_masks() {
+        // 8x1 pointer: AND row then XOR row.
+        // cols 0-1: AND 0 XOR 0 = black; 2-3: AND 0 XOR 1 = white;
+        // 4-5: AND 1 XOR 0 = clear; 6-7: AND 1 XOR 1 = invert.
+        let c = Cursor::monochrome(&[0b0000_1111, 0b0011_0011], 8, 2, 1).unwrap();
+        assert_eq!((c.w, c.h), (8, 1));
+        assert_eq!(c.px[0], Px::Rgba(0, 0, 0, 255));
+        assert_eq!(c.px[2], Px::Rgba(255, 255, 255, 255));
+        assert_eq!(c.px[4], Px::Clear);
+        assert_eq!(c.px[6], Px::Invert);
+        assert!(Cursor::monochrome(&[0], 8, 2, 1).is_none(), "short buffer");
+    }
+
+    #[test]
+    fn color_cursor_draws_scaled_and_clipped() {
+        // 2x2 opaque white pointer (BGRA), drawn on a black 4x4 frame that
+        // shows an 8x8 screen: it covers one frame pixel.
+        let c = Cursor::color(&[255u8; 16], 2, 2, 8, false).unwrap();
+        let mut f = RawFrame::new(4, 4);
+        f.planes_mut().0.fill(16);
+        c.draw(&mut f, 2, 2, 8, 8);
+        let y = f.planes_mut().0.to_vec();
+        assert_eq!(y[4 + 1], 235, "white at frame (1,1)");
+        assert_eq!(y.iter().filter(|&&v| v == 235).count(), 1);
+        // Half off the top-left edge: no panic, the visible part drawn.
+        c.draw(&mut f, -1, -1, 8, 8);
+        // Masked colour: alpha 255 + black = clear.
+        let m = Cursor::color(&[0, 0, 0, 255], 1, 1, 4, true).unwrap();
+        assert_eq!(m.px[0], Px::Clear);
+    }
 
     #[test]
     fn bgra_white_black_and_scale() {

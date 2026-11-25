@@ -116,17 +116,18 @@ pub struct HostState {
     pub guard: Guard,
     pub relays_up: usize,
     pub relays_total: usize,
-    pub events: Vec<String>,
+    /// One line about this PC's network (filled in shortly after start).
+    pub network: String,
+    /// "Stop sharing" in the window: refuse every browser until resumed.
+    /// Not saved; starting Everywhere again always shares.
+    pub paused: bool,
+    /// Permissions and session type this PC needs (see permissions.rs).
+    pub checks: Vec<crate::permissions::Check>,
 }
 
 impl HostState {
     pub fn log(&mut self, msg: impl Into<String>) {
-        let line = format!("{} {}", clock(), msg.into());
-        println!("{line}");
-        self.events.push(line);
-        if self.events.len() > 50 {
-            self.events.remove(0);
-        }
+        crate::say!("{} {}", clock(), msg.into());
     }
 }
 
@@ -191,6 +192,10 @@ pub fn run(cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>, opts: session:
                 if pending.len() > 32 {
                     continue; // flood: ignore until old ones expire
                 }
+                if state.lock().map(|s| s.paused).unwrap_or(true) {
+                    send(&ev.pubkey, json!({"v":1,"t":"error","sid":sid_b64,"reason":"paused"}));
+                    continue;
+                }
                 let verdict = state.lock().map(|mut s| s.guard.attempt(Instant::now())).unwrap_or(Verdict::Locked);
                 match verdict {
                     Verdict::Locked => {
@@ -212,6 +217,10 @@ pub fn run(cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>, opts: session:
                 pending.insert(sid, Pending { browser: ev.pubkey.clone(), keys: k, created: Instant::now() });
             }
             Some("offer") => {
+                if state.lock().map(|s| s.paused).unwrap_or(true) {
+                    pending.remove(&sid);
+                    continue;
+                }
                 let Some(p) = pending.get(&sid) else { continue };
                 if p.browser != ev.pubkey {
                     continue; // not the browser that said hello

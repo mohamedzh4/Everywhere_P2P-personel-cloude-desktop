@@ -47,7 +47,7 @@ impl Default for Config {
             max_bitrate_mbps: 20.0,
             upnp: true,
             status_port: 47800,
-            source: if cfg!(windows) { "screen".into() } else { "pattern".into() },
+            source: "screen".into(),
             web_url: DEFAULT_WEB_URL.into(),
         }
     }

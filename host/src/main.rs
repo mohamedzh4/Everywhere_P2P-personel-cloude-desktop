@@ -9,18 +9,27 @@
 //! LAN options: --port 8080 --size 1280x720 --fps 60 --bitrate 8 --bind IP
 //!              --no-pacing --source pattern|screen
 
+// On Windows, a double-click opens the app window and no terminal. Started
+// from a terminal, the output still goes there (see attach_console).
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod audio;
 mod config;
 mod encoder;
 mod input;
+mod logbook;
 mod net;
 mod nostr;
 mod pake;
+mod permissions;
+#[cfg(target_os = "macos")]
+mod sck;
 mod session;
 mod signaling;
 mod source;
 mod stamp;
 mod status;
+mod ui;
 
 use std::io::Read;
 use std::net::IpAddr;
@@ -31,7 +40,19 @@ use tiny_http::{Header, Method, Response, Server};
 const LAN_HTML: &str = include_str!("../web/index.html");
 const LAN_JS: &str = include_str!("../web/client.js");
 
+/// A "windows" app has no console; when started from one (cmd, PowerShell),
+/// print there anyway.
+#[cfg(windows)]
+fn attach_console() {
+    use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+    unsafe {
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 fn main() {
+    #[cfg(windows)]
+    attach_console();
     str0m::crypto::from_feature_flags().install_process_default();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
@@ -94,27 +115,82 @@ fn run() -> Result<(), String> {
     let c = config::load_or_create()?;
     let opts = session_options(&c);
     let status_port = c.status_port;
-    println!("Everywhere host");
-    println!();
-    println!("  On any laptop open  {}", c.web_url);
-    println!("  PC code             {}", config::pretty_code(&c.pc_code));
+    // The status port doubles as a "already running" check: a second start
+    // just shows the window of the one that runs.
+    let server = match tiny_http::Server::http(("127.0.0.1", status_port)) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("Everywhere is already running on this PC.");
+            return ui::run_window(status_port).or_else(|_| {
+                ui::open_in_browser(&format!("http://127.0.0.1:{status_port}/"));
+                Ok(())
+            });
+        }
+    };
+    logbook::open_file();
+    say!("Everywhere host {}", env!("CARGO_PKG_VERSION"));
+    say!("  On any laptop open  {}", c.web_url);
+    say!("  PC code             {}", config::pretty_code(&c.pc_code));
+    // Console only: the log can be copied and sent to someone.
     println!("  Password            {}", c.password);
-    println!();
-    println!("  Status page (this PC only): http://127.0.0.1:{status_port}");
-    println!();
-    println!("  Network: {}", net::home_report(&c.stun_servers));
-    println!();
+    say!("  Window / status page: http://127.0.0.1:{status_port}");
+    let stun = c.stun_servers.clone();
     let cfg = Arc::new(Mutex::new(c));
     let state = Arc::new(Mutex::new(signaling::HostState::default()));
     {
         let (cfg, state) = (cfg.clone(), state.clone());
         std::thread::Builder::new()
             .name("status".into())
-            .spawn(move || status::run(status_port, cfg, state))
+            .spawn(move || status::run(server, cfg, state))
             .map_err(|e| e.to_string())?;
     }
-    signaling::run(cfg, state, opts);
-    Ok(())
+    {
+        let state = state.clone();
+        std::thread::spawn(move || {
+            let report = net::home_report(&stun);
+            say!("  Network: {report}");
+            if let Ok(mut s) = state.lock() {
+                s.network = report;
+            }
+        });
+    }
+    {
+        // Ask for what this PC must allow now, while its owner is here; then
+        // keep the window up to date as they switch things on.
+        let state = state.clone();
+        std::thread::spawn(move || {
+            let mut ask = true;
+            let mut last: Option<Vec<(String, bool)>> = None;
+            loop {
+                let checks = permissions::check_all(ask);
+                ask = false;
+                let now: Vec<(String, bool)> = checks.iter().map(|c| (c.name.clone(), c.ok)).collect();
+                if last.as_ref() != Some(&now) {
+                    for c in checks.iter().filter(|c| !c.ok) {
+                        say!("  needs attention: {}: {}", c.name, c.detail);
+                    }
+                    last = Some(now);
+                }
+                if let Ok(mut s) = state.lock() {
+                    s.checks = checks;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
+        });
+    }
+    std::thread::Builder::new()
+        .name("signaling".into())
+        .spawn(move || signaling::run(cfg, state, opts))
+        .map_err(|e| e.to_string())?;
+    // The window runs on the main thread (the OS requires it). Without one,
+    // the page opens in the browser and this thread just waits.
+    if let Err(e) = ui::run_window(status_port) {
+        say!("{e}; opening the page in the browser instead");
+        ui::open_in_browser(&format!("http://127.0.0.1:{status_port}/"));
+    }
+    loop {
+        std::thread::park();
+    }
 }
 
 // ---------------- LAN test mode (phase 1) ----------------

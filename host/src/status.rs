@@ -19,14 +19,11 @@ use crate::signaling::HostState;
 
 const PAGE: &str = include_str!("../web/status.html");
 
-pub fn run(port: u16, cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>) {
-    let server = match Server::http(("127.0.0.1", port)) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("status page: cannot listen on 127.0.0.1:{port}: {e}");
-            return;
-        }
-    };
+const FONT: &[u8] = include_bytes!("../../web/vendor/fonts/figtree-latin-wght-normal.woff2");
+
+/// Serve the page on an already bound 127.0.0.1 server.
+pub fn run(server: Server, cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>) {
+    let port = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(0);
     let allowed_hosts = [format!("127.0.0.1:{port}"), format!("localhost:{port}")];
     for mut req in server.incoming_requests() {
         let host_ok = req
@@ -50,10 +47,21 @@ pub fn run(port: u16, cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>) {
         }
         let url = req.url().to_string();
         match (req.method().clone(), url.as_str()) {
-            (Method::Get, "/") => reply(req, 200, "text/html; charset=utf-8", PAGE.into()),
+            (Method::Get, u) if u == "/" || u.starts_with("/?") => reply(req, 200, "text/html; charset=utf-8", PAGE.into()),
+            (Method::Get, "/figtree.woff2") => {
+                let _ = req.respond(
+                    Response::from_data(FONT)
+                        .with_header(Header::from_bytes("Content-Type", "font/woff2").expect("header"))
+                        .with_header(Header::from_bytes("Cache-Control", "max-age=86400").expect("header")),
+                );
+            }
+            (Method::Post, "/api/open-web") if marked => {
+                crate::ui::open_in_browser(&cfg.lock().expect("config").web_url.clone());
+                reply(req, 200, "application/json", "{}".into());
+            }
             (Method::Get, "/api/status") if marked => {
                 let c = cfg.lock().expect("config").clone();
-                let mut s = state.lock().expect("state");
+                let s = state.lock().expect("state");
                 let session = s.session.as_ref().map(|h| h.status());
                 let body = json!({
                     "pc_code": config::pretty_code(&c.pc_code),
@@ -61,12 +69,15 @@ pub fn run(port: u16, cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>) {
                     "web_url": c.web_url,
                     "relays_up": s.relays_up,
                     "relays_total": s.relays_total,
+                    "network": s.network,
+                    "paused": s.paused,
+                    "checks": s.checks,
+                    "version": env!("CARGO_PKG_VERSION"),
                     "guard": s.guard.snapshot(),
                     "session": session,
-                    "events": s.events.clone(),
+                    "events": crate::logbook::recent(),
                     "config_path": config::path().display().to_string(),
                 });
-                s.events.truncate(50);
                 reply(req, 200, "application/json", body.to_string());
             }
             (Method::Post, "/api/disconnect") if marked => {
@@ -75,6 +86,25 @@ pub fn run(port: u16, cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>) {
                     h.stop();
                     s.log("disconnected from the status page");
                 }
+                reply(req, 200, "application/json", "{}".into());
+            }
+            (Method::Post, u) if marked && u.starts_with("/api/open-settings?which=") => {
+                crate::permissions::open_settings(&u["/api/open-settings?which=".len()..]);
+                reply(req, 200, "application/json", "{}".into());
+            }
+            (Method::Post, "/api/stop-sharing") if marked => {
+                let mut s = state.lock().expect("state");
+                s.paused = true;
+                if let Some(h) = s.session.take() {
+                    h.stop();
+                }
+                s.log("sharing stopped: nobody can connect");
+                reply(req, 200, "application/json", "{}".into());
+            }
+            (Method::Post, "/api/start-sharing") if marked => {
+                let mut s = state.lock().expect("state");
+                s.paused = false;
+                s.log("sharing started");
                 reply(req, 200, "application/json", "{}".into());
             }
             (Method::Post, "/api/unlock") if marked => {
