@@ -78,5 +78,14 @@ await test('topic: derived from the PC code', () => {
   eq(N.topicFor('482913007'), v.nostr_topic, 'topic');
 });
 
+await test('network: strict networks are recognised from the offer', async () => {
+  const { describeNetwork } = await import('../js/connect.js');
+  const c = (port, ip = '198.51.100.7') => `a=candidate:1 1 udp 1686052607 ${ip} ${port} typ srflx raddr 0.0.0.0 rport 0`;
+  eq(/strict/.test(describeNetwork([c(40001), c(40002)].join('\r\n'))), true, 'two ports = strict');
+  eq(/easy/.test(describeNetwork([c(40001), c(40001)].join('\r\n'))), true, 'one port = easy');
+  eq(/UDP/.test(describeNetwork('a=candidate:1 1 udp 1 abc.local 5 typ host')), true, 'no public address');
+  eq(/easy/.test(describeNetwork([c(40001), c(40009, '2001:db8::1')].join('\r\n'))), true, 'IPv6 ignored');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

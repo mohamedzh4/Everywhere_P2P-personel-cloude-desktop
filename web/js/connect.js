@@ -4,10 +4,27 @@
 import * as pake from './pake.js';
 import { DEFAULT_RELAYS, KIND, RelayPool, makeEvent, topicFor } from './nostr.js';
 
-const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
+// Three servers: if this network gives a different public port to each, the
+// PC sees it in the offer and also tries the ports that come next.
+const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
 const { b64 } = pake;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+
+/** What this browser's network looks like, from its own ICE candidates. */
+export function describeNetwork(sdp) {
+  const ports = new Map();
+  for (const line of (sdp || '').split(/\r?\n/)) {
+    const f = line.replace(/^a=candidate:/, '').split(' ');
+    if (!line.startsWith('a=candidate:') || f[6] !== 'typ' || f[7] !== 'srflx' || f[4].includes(':')) continue;
+    if (!ports.has(f[4])) ports.set(f[4], new Set());
+    ports.get(f[4]).add(Number(f[5]));
+  }
+  if (!ports.size) return 'This network did not let the browser find its public address (UDP may be blocked here).';
+  const p = [...ports.values()][0];
+  if (p.size < 2) return 'This network looks easy to reach.';
+  return 'This network gives a new public port for every destination (a strict network, common on phone hotspots).';
+}
 
 export class ConnectError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }

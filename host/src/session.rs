@@ -128,25 +128,30 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
     // ---- sockets and candidates: every path at once, ICE picks ----
     let mut socks: Vec<Sock> = Vec::new();
     let mut upnp: Option<net::UpnpMapping> = None;
+    let mut offered: Vec<String> = Vec::new();
     let v4 = opts.bind.or_else(net::local_ipv4).unwrap_or(IpAddr::from([127, 0, 0, 1]));
     let s4 = UdpSocket::bind(SocketAddr::new(v4, 0)).map_err(|e| format!("udp bind {v4}: {e}"))?;
     let l4 = s4.local_addr().map_err(|e| e.to_string())?;
     rtc.add_local_candidate(Candidate::host(l4, "udp").map_err(|e| e.to_string())?);
+    offered.push(format!("local {l4}"));
     if opts.bind.is_none() {
         // Public address of this socket, for hole punching.
-        if let Some(mapped) = net::stun_mapped(&s4, &opts.stun_servers, Duration::from_millis(800)) {
-            if mapped != l4 {
+        match net::stun_mapped(&s4, &opts.stun_servers, Duration::from_millis(2500)) {
+            Some(mapped) if mapped != l4 => {
                 if let Ok(c) = Candidate::server_reflexive(mapped, l4, "udp") {
                     rtc.add_local_candidate(c);
+                    offered.push(format!("public {mapped}"));
                 }
             }
+            Some(_) => {}
+            None => offered.push("NO public address (no STUN answer: UDP blocked?)".into()),
         }
         // A real open port on the router, when it allows UPnP.
         if opts.upnp && !l4.ip().is_loopback() {
             if let Some(m) = net::upnp_map(l4) {
                 if let Ok(c) = Candidate::server_reflexive(m.external, l4, "udp") {
                     rtc.add_local_candidate(c);
-                    println!("router port opened (UPnP): {}", m.external);
+                    offered.push(format!("router port {}", m.external));
                 }
                 upnp = Some(m);
             }
@@ -157,6 +162,7 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
                 let l6 = s6.local_addr().map_err(|e| e.to_string())?;
                 if let Ok(c) = Candidate::host(l6, "udp") {
                     rtc.add_local_candidate(c);
+                    offered.push(format!("IPv6 {l6}"));
                     socks.push(Sock { socket: s6, local: l6 });
                 }
             }
@@ -165,6 +171,10 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
     socks.insert(0, Sock { socket: s4, local: l4 });
 
     let answer = rtc.sdp_api().accept_offer(offer).map_err(|e| format!("accept offer: {e}"))?;
+    println!("  this PC offers: {}", offered.join(", "));
+    if opts.bind.is_none() {
+        probe_strict_browser(&mut rtc, offer_sdp);
+    }
 
     let shared = Arc::new(Shared {
         stop: AtomicBool::new(false),
@@ -201,6 +211,41 @@ pub fn start(offer_sdp: &str, opts: Options) -> Result<(String, Handle), String>
             .map_err(|e| e.to_string())?;
     }
     Ok((answer.to_sdp_string(), Handle { shared }))
+}
+
+/// A browser behind a "strict" NAT (common on phone hotspots and mobile
+/// carriers) gets a new public port for every destination, so the port it
+/// reported is not the one it uses to reach this PC, and this PC's checks to
+/// it are dropped. When those ports count up, the right one is usually among
+/// the next few: check them all too. The browser answers on whichever is open.
+fn probe_strict_browser(rtc: &mut Rtc, offer_sdp: &str) {
+    let seen = net::remote_public_v4(offer_sdp);
+    if seen.is_empty() {
+        println!("  browser offers: no public IPv4 address (only IPv6 or local)");
+    }
+    for (ip, ports) in seen {
+        let pattern = net::port_pattern(&ports);
+        let list = ports.iter().map(u16::to_string).collect::<Vec<_>>().join(",");
+        match &pattern {
+            net::PortPattern::Stable => println!("  browser offers: public {ip}:{list} (easy network)"),
+            net::PortPattern::Sequential { .. } => {
+                let probe = net::predicted_ports(&pattern, 40);
+                for port in &probe {
+                    let a = SocketAddr::new(ip, *port);
+                    if let Ok(c) = Candidate::server_reflexive(a, a, "udp") {
+                        rtc.add_remote_candidate(c);
+                    }
+                }
+                println!(
+                    "  browser offers: public {ip} ports {list} (strict network, ports count up): also trying the next {} ports",
+                    probe.len()
+                );
+            }
+            net::PortPattern::Random => println!(
+                "  browser offers: public {ip} ports {list} (strict network, random ports): a direct path is unlikely from there"
+            ),
+        }
+    }
 }
 
 fn recv_loop(sock: UdpSocket, tx: Sender<Msg>, shared: Arc<Shared>) {
@@ -438,6 +483,9 @@ fn rtc_loop(mut rtc: Rtc, socks: Vec<Sock>, rx: Receiver<Msg>, tx: Sender<Msg>, 
                             shared.want_keyframe.store(true, Ordering::Relaxed);
                             shared.connected.store(true, Ordering::Relaxed);
                             shared.set(|st| st.state = "streaming".into());
+                        }
+                        IceConnectionState::Disconnected if !shared.connected.load(Ordering::Relaxed) => {
+                            return Err("no working path between the two networks (see the lines above)".into())
                         }
                         IceConnectionState::Disconnected => return Ok(()),
                         _ => {}

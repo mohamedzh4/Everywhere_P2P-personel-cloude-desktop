@@ -1,6 +1,6 @@
 // Everywhere web client: the page people open on any laptop.
 
-import { connect } from './connect.js';
+import { connect, describeNetwork } from './connect.js';
 import { attachInput, enterPlayMode } from './input.js';
 import { startStats } from './stats.js';
 import { runLoader, startOrbit } from './look.js';
@@ -74,15 +74,21 @@ async function play({ pc, fast, reliable }) {
   }
   video.srcObject = new MediaStream(receivers.map((r) => r.track));
 
-  await new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(
-      'Your PC answered, but this network blocks a direct connection. Try a phone hotspot, or another network.')), 20000);
-    pc.addEventListener('connectionstatechange', () => {
-      if (pc.connectionState === 'connected') { clearTimeout(t); resolve(); }
-      if (pc.connectionState === 'failed') { clearTimeout(t); reject(new Error(
-        'Your PC answered, but no direct path works between the two networks. Try a phone hotspot.')); }
+  try {
+    await new Promise((resolve, reject) => {
+      const fail = () => new Error('Your PC answered, but no direct path works between the two networks. ' +
+        describeNetwork(pc.localDescription?.sdp) + ' The window on your PC says more. Try another network.');
+      const t = setTimeout(() => reject(fail()), 25000);
+      pc.addEventListener('connectionstatechange', () => {
+        if (pc.connectionState === 'connected') { clearTimeout(t); resolve(); }
+        if (pc.connectionState === 'failed') { clearTimeout(t); reject(fail()); }
+      });
     });
-  });
+  } catch (e) {
+    try { pc.close(); } catch (_) {}
+    video.srcObject = null;
+    throw e;
+  }
 
   orbit.set('connected');
   dock('Connected', true);

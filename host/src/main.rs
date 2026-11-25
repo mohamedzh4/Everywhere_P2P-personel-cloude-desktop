@@ -102,6 +102,8 @@ fn run() -> Result<(), String> {
     println!();
     println!("  Status page (this PC only): http://127.0.0.1:{status_port}");
     println!();
+    println!("  Network: {}", net::home_report(&c.stun_servers));
+    println!();
     let cfg = Arc::new(Mutex::new(c));
     let state = Arc::new(Mutex::new(signaling::HostState::default()));
     {
