@@ -95,7 +95,7 @@ Repo: https://github.com/mohamedzh4/Everywhere_P2P-personel-cloude-desktop
 | Paths: LAN, IPv6, STUN, port prediction for strict NATs, UPnP | Done; first test across networks (phone hotspot) under way |
 | Windows: screen (DXGI, with pointer), input (SendInput), sound (WASAPI) | Done; the exe runs; pointer and window not yet seen on Windows |
 | macOS: screen + sound (ScreenCaptureKit), input (CGEvent), permissions | Done; runs, falls back cleanly without permission; real-screen test pending |
-| Linux X11: screen (with pointer), input (XTest), sound (parec) | Done; built and tested in a container. Wayland: later |
+| Linux X11: screen (with pointer), input (XTest), sound (parec) | Done; builds and passes tests in CI; not yet run on a real Linux desktop. Wayland: later |
 | App window (glass), stop/start sharing, activity log | Done (WebView2 / WKWebView; Linux opens the browser) |
 | Adaptive bitrate, rate limits on wrong passwords | Done |
 | Hardware encoding (NVENC/AMF/QSV/VideoToolbox/VAAPI), gamepad, Wayland, signing | Next |
