@@ -1,6 +1,6 @@
 [package]
 name = "everywhere-host"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT"
 description = "Everywhere host: use this PC from any browser, over WebRTC, with no server"
