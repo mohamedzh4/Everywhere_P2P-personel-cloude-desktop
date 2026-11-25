@@ -19,6 +19,7 @@ use crate::signaling::HostState;
 
 const PAGE: &str = include_str!("../web/status.html");
 
+const ICON: &[u8] = include_bytes!("../../assets/icons/everywhere-64.png");
 const FONT: &[u8] = include_bytes!("../../web/vendor/fonts/figtree-latin-wght-normal.woff2");
 
 /// Serve the page on an already bound 127.0.0.1 server.
@@ -48,6 +49,13 @@ pub fn run(server: Server, cfg: Arc<Mutex<Config>>, state: Arc<Mutex<HostState>>
         let url = req.url().to_string();
         match (req.method().clone(), url.as_str()) {
             (Method::Get, u) if u == "/" || u.starts_with("/?") => reply(req, 200, "text/html; charset=utf-8", PAGE.into()),
+            (Method::Get, "/icon.png") => {
+                let _ = req.respond(
+                    Response::from_data(ICON)
+                        .with_header(Header::from_bytes("Content-Type", "image/png").expect("header"))
+                        .with_header(Header::from_bytes("Cache-Control", "max-age=86400").expect("header")),
+                );
+            }
             (Method::Get, "/figtree.woff2") => {
                 let _ = req.respond(
                     Response::from_data(FONT)

@@ -33,7 +33,7 @@ jobs:
       - name: Site files only
         run: |
           mkdir -p _site
-          cp -r web/index.html web/css web/js web/vendor _site/
+          cp -r web/index.html web/favicon.svg web/favicon-32.png web/apple-touch-icon.png web/css web/js web/vendor _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

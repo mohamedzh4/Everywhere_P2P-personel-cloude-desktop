@@ -3,3 +3,4 @@ _site/
 dist/
 *.zip
 target-linux/
+.DS_Store

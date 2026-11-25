@@ -17,6 +17,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Everywhere"
 chmod +x "$APP/Contents/MacOS/Everywhere"
+cp assets/icons/Everywhere.icns "$APP/Contents/Resources/Everywhere.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -26,6 +27,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>Everywhere</string>
   <key>CFBundleIdentifier</key><string>io.github.mohamedzh4.everywhere</string>
   <key>CFBundleExecutable</key><string>Everywhere</string>
+  <key>CFBundleIconFile</key><string>Everywhere</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>

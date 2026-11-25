@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Everywhere logo: a wine-red glass tile. Source of every icon file
+       (assets/make-icons.sh). Small sizes use logo-small.svg. -->
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#93303b"/>
+      <stop offset=".45" stop-color="#6e1019"/>
+      <stop offset="1" stop-color="#4c0910"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3e6e8"/>
+      <stop offset=".22" stop-color="#8a5a61"/>
+      <stop offset=".5" stop-color="#d9c3c6"/>
+      <stop offset=".78" stop-color="#6d3f46"/>
+      <stop offset="1" stop-color="#f6eced"/>
+    </linearGradient>
+    <linearGradient id="streak" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx=".18" cy=".1" r=".6">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile"><rect x="92" y="92" width="840" height="840" rx="190"/></clipPath>
+  </defs>
+  <rect x="84" y="84" width="856" height="856" rx="196" fill="url(#rim)"/>
+  <rect x="92" y="92" width="840" height="840" rx="190" fill="url(#fill)"/>
+  <g clip-path="url(#tile)">
+    <rect x="92" y="92" width="840" height="840" fill="url(#sheen)"/>
+    <rect x="-200" y="215" width="1500" height="230" fill="url(#streak)" opacity=".75" transform="rotate(-48 512 512)"/>
+    <rect x="-200" y="770" width="1500" height="22" fill="url(#streak)" opacity=".9" transform="rotate(-48 512 512)"/>
+  </g>
+  <rect x="93.5" y="93.5" width="837" height="837" rx="188.5" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="3"/>
+</svg>

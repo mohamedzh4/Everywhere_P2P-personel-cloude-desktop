@@ -80,6 +80,7 @@ jobs:
           mkdir -p "dist/Everywhere-${{ github.ref_name }}"
           cp host/target/release/everywhere-host "dist/Everywhere-${{ github.ref_name }}/everywhere"
           cp docs/install-linux.md "dist/Everywhere-${{ github.ref_name }}/README.md"
+          cp assets/icons/everywhere-256.png "dist/Everywhere-${{ github.ref_name }}/everywhere.png"
           tar -C dist -czf "Everywhere-${{ github.ref_name }}-linux-x64.tar.gz" "Everywhere-${{ github.ref_name }}"
       - uses: actions/upload-artifact@v4
         with:

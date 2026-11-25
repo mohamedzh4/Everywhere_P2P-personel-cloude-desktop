@@ -76,5 +76,8 @@ objc2-core-video = "0.3"
 objc2-foundation = "0.3"
 objc2-screen-capture-kit = "0.3"
 
+[build-dependencies]
+winresource = "0.1"
+
 [profile.release]
 lto = "thin"

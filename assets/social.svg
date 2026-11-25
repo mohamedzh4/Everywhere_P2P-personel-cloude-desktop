@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 640">
+  <!-- GitHub link preview (Settings > Social preview). -->
+  <rect width="1280" height="640" fill="#eeebe6"/>
+  <image href="logo.svg" x="500" y="90" width="280" height="280"/>
+  <text x="640" y="490" text-anchor="middle" font-family="Figtree, Helvetica Neue, Helvetica, Arial, sans-serif" font-size="76" letter-spacing="6" fill="#6e1019">
+    <tspan font-weight="300">EVERY</tspan> <tspan font-weight="700">WHERE</tspan>
+  </text>
+  <text x="640" y="555" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28" fill="#6b6b6b">Your own PC, in any browser</text>
+</svg>

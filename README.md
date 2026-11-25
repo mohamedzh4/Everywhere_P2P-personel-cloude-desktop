@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icons/everywhere-128.png" width="96" alt=""></p>
+
 # Everywhere
 
 Use your own PC (Windows, Mac or Linux) from any browser, anywhere. No
@@ -40,6 +42,7 @@ Details: [docs/plan.md](docs/plan.md), [docs/protocol-analysis.md](docs/protocol
 | `web/` | The browser client, static files for GitHub Pages. `js/`: `app`, `connect`, `pake`, `nostr`, `input`, `stats`. `vendor/`: noble crypto, pinned |
 | `web/test/` | `node test/run.mjs`; `vectors.json` pins Rust and JS crypto to the same bytes |
 | `tools/` | `network_check.py`, `browser_check.html`: what a network allows |
+| `assets/` | Logo (`logo.svg`, `logo-small.svg`) and `make-icons.sh`, which builds every icon from them |
 | `packaging/macos/` | `make-app.sh`: wraps the host into `Everywhere.app` |
 | `docs/` | Plan, protocol analysis, install guides, test logs |
 | `.github/workflows/` | CI (Linux, macOS, Windows, web), Pages deploy, release for all three on tags |
